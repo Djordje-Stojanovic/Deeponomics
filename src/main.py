@@ -163,10 +163,67 @@ def execute_transaction(transaction: Transaction):
     
     transactions.append(transaction)
 
+@app.get('/shareholders')
+async def get_shareholders():
+    """Retrieve all shareholders in the simulation."""
+    return list(shareholders.values())
+
+@app.get('/shareholders/{shareholder_id}')
+async def get_shareholder(shareholder_id: str):
+    """Retrieve a specific shareholder by ID."""
+    if shareholder_id not in shareholders:
+        raise HTTPException(status_code=404, detail="Shareholder not found")
+    return shareholders[shareholder_id]
+
+@app.get('/companies')
+async def get_companies():
+    """Retrieve all companies in the simulation."""
+    return list(companies.values())
+
+@app.get('/companies/{company_id}')
+async def get_company(company_id: str):
+    """Retrieve a specific company by ID."""
+    if company_id not in companies:
+        raise HTTPException(status_code=404, detail="Company not found")
+    return companies[company_id]
+
+@app.get('/portfolios')
+async def get_portfolios():
+    """Retrieve all portfolios in the simulation."""
+    return list(portfolios.values())
+
+@app.get('/portfolios/{shareholder_id}')
+async def get_portfolio(shareholder_id: str):
+    """Retrieve a specific portfolio by shareholder ID."""
+    if shareholder_id not in portfolios:
+        raise HTTPException(status_code=404, detail="Portfolio not found")
+    return portfolios[shareholder_id]
+
+@app.get('/orders')
+async def get_orders():
+    """Retrieve all orders in the simulation."""
+    return orders
+
+@app.get('/orders/{order_id}')
+async def get_order(order_id: str):
+    """Retrieve a specific order by ID."""
+    order = next((order for order in orders if order.id == order_id), None)
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+    return order
+
 @app.get('/transactions')
 async def get_transactions():
     """Retrieve all transactions in the simulation."""
     return transactions
+
+@app.get('/transactions/{transaction_id}')
+async def get_transaction(transaction_id: str):
+    """Retrieve a specific transaction by ID."""
+    transaction = next((t for t in transactions if t.id == transaction_id), None)
+    if transaction is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return transaction
 
 if __name__ == '__main__':
     import uvicorn

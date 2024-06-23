@@ -109,7 +109,7 @@ def match_orders(company_id: str):
             seller_id=sell_order.shareholder_id,
             company_id=company_id,
             shares=min(buy_order.shares, sell_order.shares),
-            price_per_share=(buy_order.price + sell_order.price) / 2
+            price_per_share=sell_order.price  # Execute at the sell order's price
         )
         
         execute_transaction(transaction)

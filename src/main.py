@@ -122,7 +122,6 @@ async def create_order(shareholder_id: str, company_id: str, order_type: OrderTy
     order = Order(id=str(uuid.uuid4()), shareholder_id=shareholder_id, company_id=company_id, 
                   order_type=order_type, order_subtype=order_subtype, shares=shares, price=price)
     
-    # For market orders, execute immediately
     if order_subtype == OrderSubType.MARKET:
         try:
             return execute_market_order(order)

@@ -121,7 +121,18 @@ class TestMarketSimulation(unittest.TestCase):
         # Check if the order is executed
         order_result = successful_market_order_response.json()
         self.assertEqual(order_result["message"], f"Market order executed: {affordable_shares}/{affordable_shares} shares")
-        self.assertIsNone(order_result["remaining_order"])
+        # Instead, add these assertions
+        self.assertIn("message", order_result)
+        self.assertIn("transactions", order_result)
+        self.assertTrue(len(order_result["transactions"]) > 0)
+        transactions = order_result["transactions"]
+        self.assertEqual(len(transactions), 1)
+        transaction = transactions[0]
+        self.assertEqual(transaction["buyer_id"], djordje_id)
+        self.assertEqual(transaction["seller_id"], sara_id)
+        self.assertEqual(transaction["company_id"], company_id)
+        self.assertEqual(transaction["shares"], affordable_shares)
+        self.assertEqual(transaction["price_per_share"], 120)
 
         # Check the order book
         order_book_response = self.client.get(f"/order_book/{company_id}")

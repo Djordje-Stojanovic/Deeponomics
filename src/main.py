@@ -118,19 +118,18 @@ async def create_order(shareholder_id: str, company_id: str, order_type: OrderTy
     if order_type == OrderType.SELL and existing_order_shares + shares > portfolio.holdings.get(company_id, 0):
         raise HTTPException(status_code=400, detail="Total sell orders exceed owned shares")
 
-    # Create and add the order
+    # Create the order
     order = Order(id=str(uuid.uuid4()), shareholder_id=shareholder_id, company_id=company_id, 
                   order_type=order_type, order_subtype=order_subtype, shares=shares, price=price)
     
+    # For market orders, execute immediately
+    if order_subtype == OrderSubType.MARKET:
+        return execute_market_order(order)
+    
+    # For limit orders, add to order book and attempt to match
     if company_id not in order_book:
         order_book[company_id] = {'buy': [], 'sell': []}
     order_book[company_id][order_type].append(order)
-    
-    # For market orders, execute immediately
-    if order_subtype == OrderSubType.MARKET:
-        return execute_market_order(shareholder_id, company_id, order_type, shares)
-    
-    # For limit orders, attempt to match
     match_orders(company_id)
     return order
 
@@ -188,8 +187,12 @@ def match_orders(company_id: str):
                     order_book[company_id]['sell'][i] = sell_order
                     break
 
-def execute_market_order(shareholder_id: str, company_id: str, order_type: OrderType, shares: int):
+def execute_market_order(order: Order):
     """Execute a market order immediately at the best available price."""
+    company_id = order.company_id
+    order_type = order.order_type
+    shares = order.shares
+
     if company_id not in order_book or not order_book[company_id]['buy'] + order_book[company_id]['sell']:
         raise HTTPException(status_code=400, detail="No orders available for this company")
     
@@ -208,8 +211,8 @@ def execute_market_order(shareholder_id: str, company_id: str, order_type: Order
 
         transaction = Transaction(
             id=str(uuid.uuid4()),
-            buyer_id=shareholder_id if order_type == OrderType.BUY else matching_order.shareholder_id,
-            seller_id=matching_order.shareholder_id if order_type == OrderType.BUY else shareholder_id,
+            buyer_id=order.shareholder_id if order_type == OrderType.BUY else matching_order.shareholder_id,
+            seller_id=matching_order.shareholder_id if order_type == OrderType.BUY else order.shareholder_id,
             company_id=company_id,
             shares=transaction_shares,
             price_per_share=transaction_price
@@ -224,15 +227,11 @@ def execute_market_order(shareholder_id: str, company_id: str, order_type: Order
             order_book[company_id]['sell' if order_type == OrderType.BUY else 'buy'].remove(matching_order)
         else:
             # Update the partially filled order in the order book
-            for i, order in enumerate(order_book[company_id]['sell' if order_type == OrderType.BUY else 'buy']):
-                if order.id == matching_order.id:
+            for i, o in enumerate(order_book[company_id]['sell' if order_type == OrderType.BUY else 'buy']):
+                if o.id == matching_order.id:
                     order_book[company_id]['sell' if order_type == OrderType.BUY else 'buy'][i] = matching_order
                     break
 
-    if executed_shares < shares:
-        # Remove the unfilled market order
-        order_book[company_id][order_type].pop()
-        
     return {
         "message": f"Market order executed: {executed_shares}/{shares} shares",
         "transactions": transactions

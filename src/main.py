@@ -88,10 +88,13 @@ async def create_order(shareholder_id: str, company_id: str, order_type: OrderTy
     
     shareholder = shareholders[shareholder_id]
     portfolio = portfolios[shareholder_id]
+    company = companies[company_id]
     
+    # Check for sufficient shares for sell orders
     if order_type == OrderType.SELL and portfolio.holdings.get(company_id, 0) < shares:
         raise HTTPException(status_code=400, detail="Insufficient shares")
     
+    # Check for price for limit orders
     if order_subtype == OrderSubType.LIMIT and price is None:
         raise HTTPException(status_code=400, detail="Price is required for limit orders")
     
@@ -99,35 +102,23 @@ async def create_order(shareholder_id: str, company_id: str, order_type: OrderTy
     existing_order_shares = sum(order.shares for order in order_book.get(company_id, {}).get(order_type.value, [])
                                 if order.shareholder_id == shareholder_id)
     
-    company = companies[company_id]
+    # Check for exceeding company's outstanding shares
+    if order_type == OrderType.BUY and existing_order_shares + shares > company.outstanding_shares:
+        raise HTTPException(status_code=400, detail="Total buy orders exceed company's outstanding shares")
     
+    # Check for sufficient funds
     if order_type == OrderType.BUY:
-        if existing_order_shares + shares > company.outstanding_shares:
-            raise HTTPException(status_code=400, detail="Total buy orders exceed company's outstanding shares")
-        
-        if order_subtype == OrderSubType.LIMIT:
-            total_cost = sum(order.shares * order.price for order in order_book.get(company_id, {}).get('buy', [])
-                             if order.shareholder_id == shareholder_id)
-            if shareholder.cash < total_cost + (shares * price):
-                raise HTTPException(status_code=400, detail="Insufficient funds for all buy orders")
-        else:  # Market order
-            if shareholder.cash < shares * company.stock_price:
-                raise HTTPException(status_code=400, detail="Insufficient funds for market order")
-    elif order_type == OrderType.SELL:
-        if existing_order_shares + shares > portfolio.holdings.get(company_id, 0):
-            raise HTTPException(status_code=400, detail="Total sell orders exceed owned shares")
-
-
-    if order_subtype == OrderSubType.MARKET:
-        if order_type == OrderType.BUY:
-            if shareholder.cash < shares * company.stock_price:
-                raise HTTPException(status_code=400, detail="Insufficient funds for market order")
-        return execute_market_order(shareholder_id, company_id, order_type, shares)
+        order_price = price if order_subtype == OrderSubType.LIMIT else company.stock_price
+        total_cost = sum(order.shares * (order.price or company.stock_price) for order in order_book.get(company_id, {}).get('buy', [])
+                         if order.shareholder_id == shareholder_id)
+        if shareholder.cash < total_cost + (shares * order_price):
+            raise HTTPException(status_code=400, detail="Insufficient funds for order")
     
-    # For limit orders
-    if order_type == OrderType.BUY and shareholder.cash < shares * price:
-        raise HTTPException(status_code=400, detail="Insufficient funds")
-    
+    # Check for exceeding owned shares for sell orders
+    if order_type == OrderType.SELL and existing_order_shares + shares > portfolio.holdings.get(company_id, 0):
+        raise HTTPException(status_code=400, detail="Total sell orders exceed owned shares")
+
+    # Create and add the order
     order = Order(id=str(uuid.uuid4()), shareholder_id=shareholder_id, company_id=company_id, 
                   order_type=order_type, order_subtype=order_subtype, shares=shares, price=price)
     
@@ -135,6 +126,11 @@ async def create_order(shareholder_id: str, company_id: str, order_type: OrderTy
         order_book[company_id] = {'buy': [], 'sell': []}
     order_book[company_id][order_type].append(order)
     
+    # For market orders, execute immediately
+    if order_subtype == OrderSubType.MARKET:
+        return execute_market_order(shareholder_id, company_id, order_type, shares)
+    
+    # For limit orders, attempt to match
     match_orders(company_id)
     return order
 
@@ -208,12 +204,7 @@ def execute_market_order(shareholder_id: str, company_id: str, order_type: Order
             break
         
         transaction_shares = min(matching_order.shares, shares - executed_shares)
-        total_price = transaction_shares * (matching_order.price or companies[company_id].stock_price)
-
-        if order_type == OrderType.BUY:
-            buyer = shareholders[shareholder_id]
-            if buyer.cash < total_price:
-                break  # Stop executing if not enough cash
+        transaction_price = matching_order.price or companies[company_id].stock_price
 
         transaction = Transaction(
             id=str(uuid.uuid4()),
@@ -221,7 +212,7 @@ def execute_market_order(shareholder_id: str, company_id: str, order_type: Order
             seller_id=matching_order.shareholder_id if order_type == OrderType.BUY else shareholder_id,
             company_id=company_id,
             shares=transaction_shares,
-            price_per_share=matching_order.price or companies[company_id].stock_price
+            price_per_share=transaction_price
         )
         
         execute_transaction(transaction)
@@ -237,28 +228,14 @@ def execute_market_order(shareholder_id: str, company_id: str, order_type: Order
                 if order.id == matching_order.id:
                     order_book[company_id]['sell' if order_type == OrderType.BUY else 'buy'][i] = matching_order
                     break
-        
-        company = companies[company_id]
-        company.stock_price = transaction.price_per_share
 
     if executed_shares < shares:
-        logger.warning(f"Market order partially filled: {executed_shares}/{shares} shares")
-        # Create a new market order for the remaining shares
-        remaining_shares = shares - executed_shares
-        new_order = Order(
-            id=str(uuid.uuid4()),
-            shareholder_id=shareholder_id,
-            company_id=company_id,
-            order_type=order_type,
-            order_subtype=OrderSubType.MARKET,
-            shares=remaining_shares
-        )
-        order_book[company_id][order_type.value].append(new_order)
-    
+        # Remove the unfilled market order
+        order_book[company_id][order_type].pop()
+        
     return {
         "message": f"Market order executed: {executed_shares}/{shares} shares",
-        "transactions": transactions,
-        "remaining_order": new_order if executed_shares < shares else None
+        "transactions": transactions
     }
 
 

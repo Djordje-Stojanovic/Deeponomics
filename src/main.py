@@ -40,7 +40,7 @@ class Order(BaseModel):
     order_type: OrderType
     order_subtype: OrderSubType
     shares: int
-    price: float = None  # Price is optional for market orders
+    price: float | None = None  # Make price optional
 
 class Transaction(BaseModel):
     id: str
@@ -119,6 +119,9 @@ async def create_order(shareholder_id: str, company_id: str, order_type: OrderTy
 
 
     if order_subtype == OrderSubType.MARKET:
+        if order_type == OrderType.BUY:
+            if shareholder.cash < shares * company.stock_price:
+                raise HTTPException(status_code=400, detail="Insufficient funds for market order")
         return execute_market_order(shareholder_id, company_id, order_type, shares)
     
     # For limit orders
@@ -249,8 +252,7 @@ def execute_market_order(shareholder_id: str, company_id: str, order_type: Order
             company_id=company_id,
             order_type=order_type,
             order_subtype=OrderSubType.MARKET,
-            shares=remaining_shares,
-            price=None
+            shares=remaining_shares
         )
         order_book[company_id][order_type.value].append(new_order)
     

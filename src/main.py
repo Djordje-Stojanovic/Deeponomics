@@ -95,6 +95,29 @@ async def create_order(shareholder_id: str, company_id: str, order_type: OrderTy
     if order_subtype == OrderSubType.LIMIT and price is None:
         raise HTTPException(status_code=400, detail="Price is required for limit orders")
     
+    # Check total shares in existing orders
+    existing_order_shares = sum(order.shares for order in order_book.get(company_id, {}).get(order_type.value, [])
+                                if order.shareholder_id == shareholder_id)
+    
+    company = companies[company_id]
+    
+    if order_type == OrderType.BUY:
+        if existing_order_shares + shares > company.outstanding_shares:
+            raise HTTPException(status_code=400, detail="Total buy orders exceed company's outstanding shares")
+        
+        if order_subtype == OrderSubType.LIMIT:
+            total_cost = sum(order.shares * order.price for order in order_book.get(company_id, {}).get('buy', [])
+                             if order.shareholder_id == shareholder_id)
+            if shareholder.cash < total_cost + (shares * price):
+                raise HTTPException(status_code=400, detail="Insufficient funds for all buy orders")
+        else:  # Market order
+            if shareholder.cash < shares * company.stock_price:
+                raise HTTPException(status_code=400, detail="Insufficient funds for market order")
+    elif order_type == OrderType.SELL:
+        if existing_order_shares + shares > portfolio.holdings.get(company_id, 0):
+            raise HTTPException(status_code=400, detail="Total sell orders exceed owned shares")
+
+
     if order_subtype == OrderSubType.MARKET:
         return execute_market_order(shareholder_id, company_id, order_type, shares)
     
@@ -119,10 +142,19 @@ def match_orders(company_id: str):
     sell_orders = sorted([o for o in order_book[company_id]['sell'] if o.order_subtype == OrderSubType.LIMIT], 
                          key=lambda x: x.price)
     
+    company = companies[company_id]  # Add this line
+    
     while buy_orders and sell_orders and buy_orders[0].price >= sell_orders[0].price:
         buy_order, sell_order = buy_orders[0], sell_orders[0]
         transaction_shares = min(buy_order.shares, sell_order.shares)
         
+        # Check if buyer would own all shares
+        buyer_current_shares = portfolios[buy_order.shareholder_id].holdings.get(company_id, 0)
+        if buyer_current_shares + transaction_shares >= company.outstanding_shares:
+            order_book[company_id]['buy'].remove(buy_order)
+            buy_orders.pop(0)
+            continue
+
         transaction = Transaction(
             id=str(uuid.uuid4()),
             buyer_id=buy_order.shareholder_id,
@@ -173,6 +205,13 @@ def execute_market_order(shareholder_id: str, company_id: str, order_type: Order
             break
         
         transaction_shares = min(matching_order.shares, shares - executed_shares)
+        total_price = transaction_shares * matching_order.price
+
+        if order_type == OrderType.BUY:
+            buyer = shareholders[shareholder_id]
+            if buyer.cash < total_price:
+                break  # Stop executing if not enough cash
+
         transaction = Transaction(
             id=str(uuid.uuid4()),
             buyer_id=shareholder_id if order_type == OrderType.BUY else matching_order.shareholder_id,
@@ -195,6 +234,10 @@ def execute_market_order(shareholder_id: str, company_id: str, order_type: Order
                 if order.id == matching_order.id:
                     order_book[company_id]['sell' if order_type == OrderType.BUY else 'buy'][i] = matching_order
                     break
+        
+        company = companies[company_id]
+        company.stock_price = transaction.price_per_share
+
     
     if executed_shares < shares:
         logger.warning(f"Market order partially filled: {executed_shares}/{shares} shares")
@@ -218,6 +261,22 @@ def execute_market_order(shareholder_id: str, company_id: str, order_type: Order
     }
 
 
+def clean_up_orders(company_id: str):
+    company = companies[company_id]
+    for order_type in ['buy', 'sell']:
+        order_book[company_id][order_type] = [
+            order for order in order_book[company_id][order_type]
+            if (order_type == 'buy' and 
+                shareholders[order.shareholder_id].cash >= order.shares * (order.price or company.stock_price)) or
+               (order_type == 'sell' and 
+                portfolios[order.shareholder_id].holdings.get(company_id, 0) >= order.shares)
+        ]
+
+def update_company_shares(company_id: str):
+    company = companies[company_id]
+    total_shares = sum(portfolio.holdings.get(company_id, 0) for portfolio in portfolios.values())
+    company.outstanding_shares = total_shares
+
 def execute_transaction(transaction: Transaction):
     """Execute a transaction, updating shareholder portfolios and cash."""
     buyer, seller = shareholders[transaction.buyer_id], shareholders[transaction.seller_id]
@@ -234,6 +293,13 @@ def execute_transaction(transaction: Transaction):
     
     company.stock_price = transaction.price_per_share
     
+    # Clean up empty holdings
+    if seller_portfolio.holdings[transaction.company_id] == 0:
+        del seller_portfolio.holdings[transaction.company_id]
+
+    update_company_shares(transaction.company_id)
+    clean_up_orders(transaction.company_id)
+
     transactions.append(transaction)
     
     logger.info(f"Transaction: {transaction.shares} shares of {transaction.company_id} "

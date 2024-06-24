@@ -198,7 +198,7 @@ def execute_market_order(shareholder_id: str, company_id: str, order_type: Order
         raise HTTPException(status_code=400, detail="No orders available for this company")
     
     matching_orders = sorted(order_book[company_id]['sell' if order_type == OrderType.BUY else 'buy'], 
-                             key=lambda x: x.price, reverse=(order_type == OrderType.BUY))
+                             key=lambda x: x.price or 0, reverse=(order_type == OrderType.SELL))
     
     executed_shares = 0
     transactions = []
@@ -208,7 +208,7 @@ def execute_market_order(shareholder_id: str, company_id: str, order_type: Order
             break
         
         transaction_shares = min(matching_order.shares, shares - executed_shares)
-        total_price = transaction_shares * matching_order.price
+        total_price = transaction_shares * (matching_order.price or companies[company_id].stock_price)
 
         if order_type == OrderType.BUY:
             buyer = shareholders[shareholder_id]
@@ -221,7 +221,7 @@ def execute_market_order(shareholder_id: str, company_id: str, order_type: Order
             seller_id=matching_order.shareholder_id if order_type == OrderType.BUY else shareholder_id,
             company_id=company_id,
             shares=transaction_shares,
-            price_per_share=matching_order.price
+            price_per_share=matching_order.price or companies[company_id].stock_price
         )
         
         execute_transaction(transaction)
@@ -241,7 +241,6 @@ def execute_market_order(shareholder_id: str, company_id: str, order_type: Order
         company = companies[company_id]
         company.stock_price = transaction.price_per_share
 
-    
     if executed_shares < shares:
         logger.warning(f"Market order partially filled: {executed_shares}/{shares} shares")
         # Create a new market order for the remaining shares

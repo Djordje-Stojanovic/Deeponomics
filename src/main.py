@@ -124,7 +124,10 @@ async def create_order(shareholder_id: str, company_id: str, order_type: OrderTy
     
     # For market orders, execute immediately
     if order_subtype == OrderSubType.MARKET:
-        return execute_market_order(order)
+        try:
+            return execute_market_order(order)
+        except HTTPException as e:
+            raise e  # Re-raise the exception to be caught by FastAPI
     
     # For limit orders, add to order book and attempt to match
     if company_id not in order_book:
@@ -192,6 +195,7 @@ def execute_market_order(order: Order):
     company_id = order.company_id
     order_type = order.order_type
     shares = order.shares
+    shareholder = shareholders[order.shareholder_id]
 
     if company_id not in order_book or not order_book[company_id]['buy'] + order_book[company_id]['sell']:
         raise HTTPException(status_code=400, detail="No orders available for this company")
@@ -201,6 +205,7 @@ def execute_market_order(order: Order):
     
     executed_shares = 0
     transactions = []
+    total_cost = 0
     
     for matching_order in matching_orders:
         if executed_shares >= shares:
@@ -208,6 +213,13 @@ def execute_market_order(order: Order):
         
         transaction_shares = min(matching_order.shares, shares - executed_shares)
         transaction_price = matching_order.price or companies[company_id].stock_price
+        transaction_cost = transaction_shares * transaction_price
+
+        if order_type == OrderType.BUY:
+            if shareholder.cash < total_cost + transaction_cost:
+                if executed_shares == 0:
+                    raise HTTPException(status_code=400, detail="Insufficient funds for market order")
+                break
 
         transaction = Transaction(
             id=str(uuid.uuid4()),
@@ -221,6 +233,7 @@ def execute_market_order(order: Order):
         execute_transaction(transaction)
         transactions.append(transaction)
         executed_shares += transaction_shares
+        total_cost += transaction_cost
         matching_order.shares -= transaction_shares
         
         if matching_order.shares == 0:
@@ -231,6 +244,9 @@ def execute_market_order(order: Order):
                 if o.id == matching_order.id:
                     order_book[company_id]['sell' if order_type == OrderType.BUY else 'buy'][i] = matching_order
                     break
+
+    if executed_shares == 0:
+        raise HTTPException(status_code=400, detail="Could not execute market order")
 
     return {
         "message": f"Market order executed: {executed_shares}/{shares} shares",

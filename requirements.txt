@@ -4,3 +4,7 @@ sqlalchemy
 aiosqlite
 redis
 PyQt6
+sqlalchemy 
+databases[sqlite] 
+aiosqlite
+psycopg2-binary

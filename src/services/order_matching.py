@@ -9,11 +9,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 def match_orders(company_id: str, db: Session):
-    company = crud.get_company(db, company_id)
-    if not company:
-        logger.error(f"Company with id {company_id} not found")
-        return
-
     buy_orders = db.query(Order).filter(
         Order.company_id == company_id,
         Order.order_type == OrderType.BUY
@@ -29,19 +24,19 @@ def match_orders(company_id: str, db: Session):
             if buy_order.price >= sell_order.price:
                 execute_trade(buy_order, sell_order, db)
                 if buy_order.shares == 0:
-                    # Check if the order still exists before deleting
-                    existing_order = db.query(Order).filter(Order.id == buy_order.id).first()
-                    if existing_order:
-                        db.delete(existing_order)
+                    db.delete(buy_order)
                     break
-        if buy_order.shares == 0:
-            break
+            else:
+                break  # No more matches possible
+        if buy_order.shares > 0:
+            db.add(buy_order)
     
     db.commit()
+    logger.info(f"Matching completed for company {company_id}")
 
 def execute_trade(buy_order: Order, sell_order: Order, db: Session):
     trade_shares = min(buy_order.shares, sell_order.shares)
-    trade_price = sell_order.price  # Could also be (buy_order.price + sell_order.price) / 2
+    trade_price = sell_order.price
 
     transaction = Transaction(
         id=str(uuid.uuid4()),
@@ -52,31 +47,32 @@ def execute_trade(buy_order: Order, sell_order: Order, db: Session):
         price_per_share=trade_price
     )
 
-    crud.execute_transaction(db, transaction)
+    db.add(transaction)
 
-    # Update orders
     buy_order.shares -= trade_shares
     sell_order.shares -= trade_shares
 
-    # Update portfolios
-    update_portfolio(db, buy_order.shareholder_id, buy_order.company_id, trade_shares)
-    update_portfolio(db, sell_order.shareholder_id, sell_order.company_id, -trade_shares)
+    if sell_order.shares == 0:
+        db.delete(sell_order)
+    else:
+        db.add(sell_order)
 
-    # Update shareholder cash
-    update_shareholder_cash(db, buy_order.shareholder_id, -trade_shares * trade_price)
-    update_shareholder_cash(db, sell_order.shareholder_id, trade_shares * trade_price)
+    crud.update_shareholder_portfolio(db, buy_order.shareholder_id, buy_order.company_id, trade_shares)
+    crud.update_shareholder_portfolio(db, sell_order.shareholder_id, sell_order.company_id, -trade_shares)
+    crud.update_shareholder_cash(db, buy_order.shareholder_id, -trade_shares * trade_price)
+    crud.update_shareholder_cash(db, sell_order.shareholder_id, trade_shares * trade_price)
 
-    # Update company stock price
     company = crud.get_company(db, buy_order.company_id)
     company.stock_price = trade_price
     db.add(company)
 
-    if sell_order.shares == 0:
-        db.delete(sell_order)
-
     db.commit()
+    logger.info(f"Trade executed: {trade_shares} shares at ${trade_price} per share")
 
 def execute_market_order(order: Order, db: Session):
+    company = crud.get_company(db, order.company_id)
+    shareholder = crud.get_shareholder(db, order.shareholder_id)
+
     matching_orders = db.query(Order).filter(
         Order.company_id == order.company_id,
         Order.order_type == (OrderType.SELL if order.order_type == OrderType.BUY else OrderType.BUY)
@@ -90,7 +86,7 @@ def execute_market_order(order: Order, db: Session):
             break
         
         trade_shares = min(matching_order.shares, order.shares - executed_shares)
-        trade_price = matching_order.price
+        trade_price = matching_order.price or company.stock_price
 
         transaction = Transaction(
             id=str(uuid.uuid4()),
@@ -101,26 +97,34 @@ def execute_market_order(order: Order, db: Session):
             price_per_share=trade_price
         )
         
-        crud.execute_transaction(db, transaction)
+        db.add(transaction)
         transactions.append(transaction)
         
         executed_shares += trade_shares
         matching_order.shares -= trade_shares
         
-        update_portfolio(db, order.shareholder_id, order.company_id, trade_shares if order.order_type == OrderType.BUY else -trade_shares)
-        update_portfolio(db, matching_order.shareholder_id, order.company_id, -trade_shares if order.order_type == OrderType.BUY else trade_shares)
-        
-        update_shareholder_cash(db, order.shareholder_id, -trade_shares * trade_price if order.order_type == OrderType.BUY else trade_shares * trade_price)
-        update_shareholder_cash(db, matching_order.shareholder_id, trade_shares * trade_price if order.order_type == OrderType.BUY else -trade_shares * trade_price)
-        
         if matching_order.shares == 0:
             db.delete(matching_order)
+        else:
+            db.add(matching_order)
+
+        crud.update_shareholder_portfolio(db, transaction.buyer_id, order.company_id, trade_shares)
+        crud.update_shareholder_portfolio(db, transaction.seller_id, order.company_id, -trade_shares)
+        crud.update_shareholder_cash(db, transaction.buyer_id, -trade_shares * trade_price)
+        crud.update_shareholder_cash(db, transaction.seller_id, trade_shares * trade_price)
+
+        company.stock_price = trade_price
+        db.add(company)
+
+    # Remove the market order after execution
+    db.delete(order)
     
     db.commit()
 
     if executed_shares == 0:
         raise ValueError("Could not execute market order")
 
+    logger.info(f"Market order executed: {executed_shares} shares in {len(transactions)} transactions")
     return transactions
 
 def update_portfolio(db: Session, shareholder_id: str, company_id: str, shares_change: int):

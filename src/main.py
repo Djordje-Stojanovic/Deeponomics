@@ -58,17 +58,20 @@ async def get_all_companies(db: Session = Depends(get_db)):
 async def create_order(order: OrderCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     db_order = crud.create_order(db, order)
     if not db_order:
-        raise HTTPException(status_code=400, detail="Order creation failed")
+        raise HTTPException(status_code=400, detail="Order creation failed. Please check your inputs and try again.")
     
     if order.order_subtype == OrderSubType.MARKET:
         try:
-            result = execute_market_order(db_order, db)
-            return OrderResponse.from_orm(db_order)
+            transactions = execute_market_order(db_order, db)
+            return {
+                "message": f"Market order executed: {len(transactions)} transactions",
+                "transactions": [TransactionResponse.from_orm(t) for t in transactions]
+            }
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
-    
-    background_tasks.add_task(match_orders, order.company_id, db)
-    return OrderResponse.from_orm(db_order)
+    else:
+        background_tasks.add_task(match_orders, order.company_id, db)
+        return OrderResponse.from_orm(db_order)
 
 @app.delete('/orders/{order_id}')
 async def cancel_order(order_id: str, db: Session = Depends(get_db)):
@@ -98,6 +101,11 @@ async def get_order_book(company_id: str, db: Session = Depends(get_db)):
     if not company:
         raise HTTPException(status_code=404, detail="Company not found")
     return crud.get_order_book(db, company_id)
+
+@app.get('/transactions', response_model=List[TransactionResponse])
+async def get_transactions(company_id: str = None, shareholder_id: str = None, db: Session = Depends(get_db)):
+    transactions = crud.get_transaction_history(db, company_id, shareholder_id)
+    return [TransactionResponse.from_orm(t) for t in transactions]
 
 if __name__ == '__main__':
     import uvicorn

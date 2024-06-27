@@ -1,3 +1,4 @@
+#models.py
 import uuid
 from sqlalchemy import Column, String, Float, Integer, ForeignKey, Enum as SQLAlchemyEnum
 from sqlalchemy.orm import relationship
@@ -38,9 +39,17 @@ class DBCompany(Base):
     name = Column(String, index=True)
     stock_price = Column(Float)
     outstanding_shares = Column(Integer)
-
+    
+    # Maintain existing relationships
     stock = relationship("DBStock", back_populates="company", uselist=False)
     portfolios = relationship("DBPortfolio", back_populates="company")
+    
+    # New fields for performance metrics
+    revenue = Column(Float, default=0)
+    costs = Column(Float, default=0)
+    profit = Column(Float, default=0)
+    days_active = Column(Integer, default=0)
+    total_profit = Column(Float, default=0)
 
 class DBPortfolio(Base):
     __tablename__ = "portfolios"

@@ -1,5 +1,6 @@
+# schemas.py
 from pydantic import BaseModel, ConfigDict
-from typing import Optional
+from typing import List, Optional
 from enum import Enum
 
 class OrderType(str, Enum):
@@ -59,5 +60,11 @@ class TransactionResponse(BaseModel):
     company_id: str
     shares: int
     price_per_share: float
+
+    model_config = ConfigDict(from_attributes=True)
+
+class MarketOrderResponse(BaseModel):
+    message: str
+    transactions: List[TransactionResponse]
 
     model_config = ConfigDict(from_attributes=True)

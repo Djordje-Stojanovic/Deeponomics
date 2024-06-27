@@ -1,10 +1,13 @@
 # main.py
+import asyncio
+from contextlib import asynccontextmanager
+from crud import run_company_ticks
 from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks
 from sqlalchemy.orm import Session
 from database import engine, get_db
 from models import Base
-from schemas import Shareholder, Company, Portfolio, OrderCreate, OrderResponse, TransactionResponse, OrderType, OrderSubType
-from typing import List
+from schemas import Shareholder, Company, Portfolio, OrderCreate, OrderResponse, TransactionResponse, OrderType, OrderSubType, MarketOrderResponse
+from typing import List, Union
 import crud
 import logging
 from services.order_matching import match_orders, execute_market_order
@@ -19,7 +22,19 @@ def create_tables():
 
 create_tables()
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    company_ticks_task = asyncio.create_task(run_company_ticks())
+    yield
+    # Shutdown
+    company_ticks_task.cancel()
+    try:
+        await company_ticks_task
+    except asyncio.CancelledError:
+        logger.info("Company ticks task cancelled")
+
+app = FastAPI(lifespan=lifespan)
 
 @app.post('/shareholders', response_model=Shareholder)
 async def create_shareholder(name: str, initial_cash: float, db: Session = Depends(get_db)):
@@ -54,7 +69,7 @@ async def get_company(company_id: str, db: Session = Depends(get_db)):
 async def get_all_companies(db: Session = Depends(get_db)):
     return crud.get_all_companies(db)
 
-@app.post('/orders', response_model=OrderResponse)
+@app.post('/orders', response_model=Union[OrderResponse, MarketOrderResponse])
 async def create_order(order: OrderCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     db_order = crud.create_order(db, order)
     if not db_order:
@@ -63,10 +78,10 @@ async def create_order(order: OrderCreate, background_tasks: BackgroundTasks, db
     if order.order_subtype == OrderSubType.MARKET:
         try:
             transactions = execute_market_order(db_order, db)
-            return {
-                "message": f"Market order executed: {len(transactions)} transactions",
-                "transactions": [TransactionResponse.from_orm(t) for t in transactions]
-            }
+            return MarketOrderResponse(
+                message=f"Market order executed: {len(transactions)} transactions",
+                transactions=[TransactionResponse.from_orm(t) for t in transactions]
+            )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
     else:
@@ -106,6 +121,22 @@ async def get_order_book(company_id: str, db: Session = Depends(get_db)):
 async def get_transactions(company_id: str = None, shareholder_id: str = None, db: Session = Depends(get_db)):
     transactions = crud.get_transaction_history(db, company_id, shareholder_id)
     return [TransactionResponse.from_orm(t) for t in transactions]
+
+@app.get('/companies/{company_id}/performance')
+async def get_company_performance(company_id: str, db: Session = Depends(get_db)):
+    company = crud.get_company(db, company_id)
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+    return {
+        "id": company.id,
+        "name": company.name,
+        "stock_price": company.stock_price,
+        "revenue": company.revenue,
+        "costs": company.costs,
+        "profit": company.profit,
+        "total_profit": company.total_profit,
+        "days_active": company.days_active,
+    }
 
 if __name__ == '__main__':
     import uvicorn

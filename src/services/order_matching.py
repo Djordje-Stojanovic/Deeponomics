@@ -5,6 +5,7 @@ from schemas import OrderType, OrderSubType
 import crud
 import uuid
 import logging
+from crud import update_stock_price
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,9 @@ def match_orders(company_id: str, db: Session):
                 break  # No more matches possible
         if buy_order.shares > 0:
             db.add(buy_order)
-    
+
+    update_stock_price(db, company_id)
+
     db.commit()
     logger.info(f"Matching completed for company {company_id}")
 
@@ -63,7 +66,7 @@ def execute_trade(buy_order: Order, sell_order: Order, db: Session):
     crud.update_shareholder_cash(db, sell_order.shareholder_id, trade_shares * trade_price)
 
     company = crud.get_company(db, buy_order.company_id)
-    company.stock_price = trade_price
+    update_stock_price(db, buy_order.company_id)
     db.add(company)
 
     db.commit()
@@ -71,7 +74,7 @@ def execute_trade(buy_order: Order, sell_order: Order, db: Session):
 
 def execute_market_order(order: Order, db: Session):
     company = crud.get_company(db, order.company_id)
-    shareholder = crud.get_shareholder(db, order.shareholder_id)
+    buyer = crud.get_shareholder(db, order.shareholder_id)
 
     matching_orders = db.query(Order).filter(
         Order.company_id == order.company_id,
@@ -80,6 +83,7 @@ def execute_market_order(order: Order, db: Session):
     
     executed_shares = 0
     transactions = []
+    max_affordable_shares = 0
     
     for matching_order in matching_orders:
         if executed_shares >= order.shares:
@@ -87,6 +91,15 @@ def execute_market_order(order: Order, db: Session):
         
         trade_shares = min(matching_order.shares, order.shares - executed_shares)
         trade_price = matching_order.price or company.stock_price
+
+        # Check if buyer has enough cash
+        if order.order_type == OrderType.BUY:
+            max_affordable_shares = int(buyer.cash // trade_price)
+            if max_affordable_shares < trade_shares:
+                if max_affordable_shares > 0:
+                    trade_shares = max_affordable_shares
+                else:
+                    break  # Can't afford any shares at this price
 
         transaction = Transaction(
             id=str(uuid.uuid4()),
@@ -121,8 +134,11 @@ def execute_market_order(order: Order, db: Session):
     
     db.commit()
 
+    # Update the stock price after executing the market order
+    update_stock_price(db, order.company_id)
+
     if executed_shares == 0:
-        raise ValueError("Could not execute market order")
+        raise ValueError(f"Could not execute market order. Maximum affordable shares: {max_affordable_shares}")
 
     logger.info(f"Market order executed: {executed_shares} shares in {len(transactions)} transactions")
     return transactions

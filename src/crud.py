@@ -1,12 +1,92 @@
 # crud.py
 import logging
+import random
 from sqlalchemy.orm import Session
 from models import DBShareholder, DBCompany, DBPortfolio, Order, Transaction
 from schemas import OrderCreate, OrderType
+from fastapi import BackgroundTasks
+import asyncio
 import uuid
 from sqlalchemy import func
+from database import SessionLocal 
 
 logger = logging.getLogger(__name__)
+
+def update_company_performance(db: Session, company_id: str):
+    company = get_company(db, company_id)
+    if not company:
+        return None
+
+    # Simple revenue generation (based on company size)
+    base_revenue = company.outstanding_shares * company.stock_price * 0.001  # Adjusted for daily revenue
+    revenue_fluctuation = random.uniform(0.95, 1.05)  # 5% daily fluctuation
+    company.revenue = base_revenue * revenue_fluctuation
+
+    # Simple cost calculation (70-90% of revenue)
+    cost_ratio = random.uniform(0.7, 0.9)
+    company.costs = company.revenue * cost_ratio
+
+    # Calculate daily profit
+    daily_profit = company.revenue - company.costs
+    
+    # Update company financials
+    company.profit = daily_profit
+    company.total_profit += daily_profit
+    company.days_active += 1
+
+    db.add(company)
+    db.commit()
+    db.refresh(company)
+
+    return company
+
+async def run_company_ticks():
+    while True:
+        db = SessionLocal()
+        try:
+            companies = get_all_companies(db)
+            for company in companies:
+                update_company_performance(db, company.id)
+            db.commit()
+            await asyncio.sleep(1)  # Wait for 1 second before the next tick
+        except Exception as e:
+            logger.error(f"Error in run_company_ticks: {str(e)}")
+            db.rollback()
+        finally:
+            db.close()
+
+def update_stock_price(db: Session, company_id: str):
+    company = get_company(db, company_id)
+    if not company:
+        return None
+
+    # Get the lowest current sell order price
+    lowest_sell_order = db.query(Order).filter(
+        Order.company_id == company_id,
+        Order.order_type == OrderType.SELL
+    ).order_by(Order.price.asc()).first()
+
+    if lowest_sell_order:
+        new_price = lowest_sell_order.price
+    else:
+        # If no sell orders, get the latest transaction price
+        latest_transaction = db.query(Transaction).filter(
+            Transaction.company_id == company_id
+        ).order_by(Transaction.id.desc()).first()
+        
+        if latest_transaction:
+            new_price = latest_transaction.price_per_share
+        else:
+            # If no transactions, keep the current price
+            new_price = company.stock_price
+
+    if new_price != company.stock_price:
+        company.stock_price = new_price
+        db.add(company)
+        db.commit()
+        logger.info(f"Updated stock price for company {company_id} to {new_price}")
+
+    return company.stock_price
 
 def create_shareholder(db: Session, name: str, initial_cash: float):
     shareholder_id = str(uuid.uuid4())

@@ -8,3 +8,4 @@ sqlalchemy
 databases[sqlite] 
 aiosqlite
 psycopg2-binary
+PySide6

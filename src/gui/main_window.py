@@ -41,7 +41,6 @@ class MainWindow(QMainWindow):
     def update_data(self):
         self.market_data_widget.update_data()
         self.trading_widget.update_companies()
-        self.trading_widget.update_order_book()
         if self.current_user_id:
             self.portfolio_widget.update_data(self.current_user_id)
 

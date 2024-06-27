@@ -1,6 +1,6 @@
 # src/gui/trading_widget.py
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, 
-                               QLineEdit, QPushButton, QComboBox, QTableView, QLabel)
+                               QLineEdit, QPushButton, QComboBox, QTableView, QLabel, QMessageBox)
 from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex
 import crud
 from database import SessionLocal
@@ -63,6 +63,7 @@ class TradingWidget(QWidget):
     def __init__(self):
         super().__init__()
         self.current_user_id = None
+        self.companies = []  # Store company data
         self.setup_ui()
 
     def setup_ui(self):
@@ -71,6 +72,7 @@ class TradingWidget(QWidget):
         # Order entry form
         form_layout = QFormLayout()
         self.company_combo = QComboBox()
+        self.company_combo.currentIndexChanged.connect(self.on_company_changed)
         self.order_type_combo = QComboBox()
         self.order_type_combo.addItems(["Buy", "Sell"])
         self.order_subtype_combo = QComboBox()
@@ -100,33 +102,64 @@ class TradingWidget(QWidget):
 
     def update_companies(self):
         db = SessionLocal()
-        companies = crud.get_all_companies(db)
+        self.companies = crud.get_all_companies(db)
         db.close()
+        
+        current_company_id = self.company_combo.currentData()
+        
         self.company_combo.clear()
-        self.company_combo.addItems([company.name for company in companies])
+        for company in self.companies:
+            self.company_combo.addItem(company.name, company.id)
+        
+        if current_company_id:
+            index = self.company_combo.findData(current_company_id)
+            if index >= 0:
+                self.company_combo.setCurrentIndex(index)
+
+    def on_company_changed(self, index):
+        if index >= 0:
+            company_id = self.company_combo.itemData(index)
+            self.update_order_book(company_id)
 
     def place_order(self):
         if not self.current_user_id:
             QMessageBox.warning(self, "Error", "No user logged in.")
             return
 
-        db = SessionLocal()
-        order = OrderCreate(
-            shareholder_id=self.current_user_id,
-            company_id=self.company_combo.currentText(),
-            order_type=OrderType.BUY if self.order_type_combo.currentText() == "Buy" else OrderType.SELL,
-            order_subtype=OrderSubType.LIMIT if self.order_subtype_combo.currentText() == "Limit" else OrderSubType.MARKET,
-            shares=int(self.shares_edit.text()),
-            price=float(self.price_edit.text()) if self.order_subtype_combo.currentText() == "Limit" else None
-        )
-        crud.create_order(db, order)
-        db.close()
-        self.update_order_book()
+        company_id = self.company_combo.currentData()
+        if not company_id:
+            QMessageBox.warning(self, "Error", "No company selected.")
+            return
 
-    def update_order_book(self):
-        selected_company = self.company_combo.currentText()
+        try:
+            shares = int(self.shares_edit.text())
+            price = float(self.price_edit.text()) if self.order_subtype_combo.currentText() == "Limit" else None
+        except ValueError:
+            QMessageBox.warning(self, "Error", "Invalid shares or price value.")
+            return
+
         db = SessionLocal()
-        company = crud.get_company(db, selected_company)
-        db.close()
-        if company:
-            self.order_book_model.update_data(company.id)
+        try:
+            order = OrderCreate(
+                shareholder_id=self.current_user_id,
+                company_id=company_id,
+                order_type=OrderType.BUY if self.order_type_combo.currentText() == "Buy" else OrderType.SELL,
+                order_subtype=OrderSubType.LIMIT if self.order_subtype_combo.currentText() == "Limit" else OrderSubType.MARKET,
+                shares=shares,
+                price=price
+            )
+            created_order = crud.create_order(db, order)
+            if created_order:
+                QMessageBox.information(self, "Success", "Order placed successfully.")
+                self.update_order_book(company_id)
+            else:
+                QMessageBox.warning(self, "Error", "Failed to create order. Please check your inputs and try again.")
+                print(f"Order creation failed. Inputs: {order}")
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"An error occurred: {str(e)}")
+            print(f"Exception occurred: {str(e)}")
+        finally:
+            db.close()
+
+    def update_order_book(self, company_id):
+        self.order_book_model.update_data(company_id)

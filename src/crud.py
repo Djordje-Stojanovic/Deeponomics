@@ -135,28 +135,22 @@ def create_order(db: Session, order: OrderCreate):
     # Check if the shareholder exists
     shareholder = db.query(DBShareholder).filter(DBShareholder.id == order.shareholder_id).first()
     if not shareholder:
+        print(f"Shareholder not found: {order.shareholder_id}")
         return None
 
     # Check if the company exists
     company = db.query(DBCompany).filter(DBCompany.id == order.company_id).first()
     if not company:
+        print(f"Company not found: {order.company_id}")
         return None
 
     if order.order_type == OrderType.BUY:
-        # For buy orders, check if there are enough available shares
-        total_buy_orders = db.query(func.sum(Order.shares)).filter(
-            Order.company_id == order.company_id,
-            Order.order_type == OrderType.BUY
-        ).scalar() or 0
-
-        if total_buy_orders + order.shares > company.outstanding_shares:
-            return None  # Not enough shares available
-
-        # Check if the shareholder has enough cash
+        # For buy orders, check if the shareholder has enough cash
         if order.price:
             total_cost = order.shares * order.price
             if shareholder.cash < total_cost:
-                return None  # Not enough cash
+                print(f"Insufficient funds. Required: {total_cost}, Available: {shareholder.cash}")
+                return None
 
     elif order.order_type == OrderType.SELL:
         # For sell orders, check if the shareholder owns enough shares
@@ -166,7 +160,8 @@ def create_order(db: Session, order: OrderCreate):
         ).first()
 
         if not portfolio or portfolio.shares < order.shares:
-            return None  # Not enough shares to sell
+            print(f"Insufficient shares. Required: {order.shares}, Available: {portfolio.shares if portfolio else 0}")
+            return None
 
     # If all checks pass, create the order
     db_order = Order(
@@ -179,9 +174,14 @@ def create_order(db: Session, order: OrderCreate):
         price=order.price
     )
     db.add(db_order)
-    db.commit()
-    db.refresh(db_order)
-    return db_order
+    try:
+        db.commit()
+        db.refresh(db_order)
+        return db_order
+    except Exception as e:
+        print(f"Error committing order to database: {str(e)}")
+        db.rollback()
+        return None
 
 def cancel_order(db: Session, order_id: str):
     order = db.query(Order).filter(Order.id == order_id).first()

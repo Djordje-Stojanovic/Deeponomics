@@ -59,27 +59,48 @@ async def run_company_ticks():
 def update_stock_price(db: Session, company_id: str):
     company = get_company(db, company_id)
     if not company:
+        logger.error(f"Company not found: {company_id}")
         return None
 
-    # Get the lowest current sell order price
-    lowest_sell_order = db.query(Order).filter(
+    # Get the lowest current sell limit order price
+    lowest_sell_limit = db.query(Order).filter(
         Order.company_id == company_id,
-        Order.order_type == OrderType.SELL
+        Order.order_type == OrderType.SELL,
+        Order.order_subtype == OrderSubType.LIMIT
     ).order_by(Order.price.asc()).first()
 
-    if lowest_sell_order:
-        new_price = lowest_sell_order.price
+    if lowest_sell_limit:
+        new_price = lowest_sell_limit.price
     else:
-        # If no sell orders, get the latest transaction price
-        latest_transaction = db.query(Transaction).filter(
-            Transaction.company_id == company_id
-        ).order_by(Transaction.id.desc()).first()
-        
-        if latest_transaction:
-            new_price = latest_transaction.price_per_share
+        # Check if there's a market sell order
+        market_sell_order = db.query(Order).filter(
+            Order.company_id == company_id,
+            Order.order_type == OrderType.SELL,
+            Order.order_subtype == OrderSubType.MARKET
+        ).first()
+
+        if market_sell_order:
+            # If there's a market sell order, use the latest transaction price
+            latest_transaction = db.query(Transaction).filter(
+                Transaction.company_id == company_id
+            ).order_by(Transaction.id.desc()).first()
+
+            if latest_transaction:
+                new_price = latest_transaction.price_per_share
+            else:
+                # If no transactions, use the initial company price
+                new_price = company.stock_price
         else:
-            # If no transactions, keep the current price
-            new_price = company.stock_price
+            # If no sell orders at all, use the latest transaction price
+            latest_transaction = db.query(Transaction).filter(
+                Transaction.company_id == company_id
+            ).order_by(Transaction.id.desc()).first()
+
+            if latest_transaction:
+                new_price = latest_transaction.price_per_share
+            else:
+                # If no transactions, keep the current price
+                new_price = company.stock_price
 
     if new_price != company.stock_price:
         company.stock_price = new_price
@@ -136,33 +157,52 @@ def create_order(db: Session, order: OrderCreate):
     # Check if the shareholder exists
     shareholder = db.query(DBShareholder).filter(DBShareholder.id == order.shareholder_id).first()
     if not shareholder:
-        print(f"Shareholder not found: {order.shareholder_id}")
-        return None
+        return None, f"Shareholder not found: {order.shareholder_id}"
 
     # Check if the company exists
-    company = db.query(DBCompany).filter(DBCompany.id == order.company_id).first()
+    company = get_company(db, order.company_id)
     if not company:
-        print(f"Company not found: {order.company_id}")
-        return None
+        return None, f"Company not found: {order.company_id}"
 
     if order.order_type == OrderType.BUY:
-        # For buy orders, check if the shareholder has enough cash
-        if order.price:
-            total_cost = order.shares * order.price
-            if shareholder.cash < total_cost:
-                print(f"Insufficient funds. Required: {total_cost}, Available: {shareholder.cash}")
-                return None
+        # Check if the shareholder has enough cash
+        total_cost = order.shares * order.price
+        if shareholder.cash < total_cost:
+            return None, f"Insufficient funds. Required: {total_cost}, Available: {shareholder.cash}"
+
+        # Get shareholder's current portfolio
+        portfolio = get_portfolio(db, order.shareholder_id, order.company_id)
+        current_shares = portfolio.shares if portfolio else 0
+
+        # Get shareholder's current buy orders
+        current_buy_orders = db.query(func.sum(Order.shares)).filter(
+            Order.shareholder_id == order.shareholder_id,
+            Order.company_id == order.company_id,
+            Order.order_type == OrderType.BUY
+        ).scalar() or 0
+
+        # Calculate available shares for this shareholder
+        available_shares = company.outstanding_shares - current_shares - current_buy_orders
+
+        if order.shares > available_shares:
+            return None, f"Not enough available shares. Requested: {order.shares}, Available: {available_shares}"
+
+        # Check if total cost of all buy orders (including this one) exceeds available cash
+        total_buy_orders_cost = db.query(func.sum(Order.shares * Order.price)).filter(
+            Order.shareholder_id == order.shareholder_id,
+            Order.company_id == order.company_id,
+            Order.order_type == OrderType.BUY
+        ).scalar() or 0
+        total_buy_orders_cost += total_cost
+
+        if total_buy_orders_cost > shareholder.cash:
+            return None, f"Insufficient funds for all buy orders. Required: {total_buy_orders_cost}, Available: {shareholder.cash}"
 
     elif order.order_type == OrderType.SELL:
-        # For sell orders, check if the shareholder owns enough shares
-        portfolio = db.query(DBPortfolio).filter(
-            DBPortfolio.shareholder_id == order.shareholder_id,
-            DBPortfolio.company_id == order.company_id
-        ).first()
-
+        # Check if the shareholder owns enough shares
+        portfolio = get_portfolio(db, order.shareholder_id, order.company_id)
         if not portfolio or portfolio.shares < order.shares:
-            print(f"Insufficient shares. Required: {order.shares}, Available: {portfolio.shares if portfolio else 0}")
-            return None
+            return None, f"Insufficient shares. Required: {order.shares}, Available: {portfolio.shares if portfolio else 0}"
 
     # If all checks pass, create the order
     db_order = Order(
@@ -178,12 +218,11 @@ def create_order(db: Session, order: OrderCreate):
     try:
         db.commit()
         db.refresh(db_order)
-        return db_order
+        return db_order, None
     except Exception as e:
-        print(f"Error committing order to database: {str(e)}")
         db.rollback()
-        return None
-
+        return None, f"Error committing order to database: {str(e)}"
+    
 def cancel_order(db: Session, order_id: str):
     order = db.query(Order).filter(Order.id == order_id).first()
     if order:
@@ -278,3 +317,7 @@ def get_lowest_sell_order(db: Session, company_id: str):
         Order.company_id == company_id,
         Order.order_type == OrderType.SELL
     ).order_by(Order.price.asc()).first()
+
+def get_total_shares_held(db: Session, company_id: str) -> int:
+    total_shares = db.query(func.sum(DBPortfolio.shares)).filter(DBPortfolio.company_id == company_id).scalar()
+    return total_shares or 0

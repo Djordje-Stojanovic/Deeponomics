@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from crud import run_company_ticks
 from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks
 from sqlalchemy.orm import Session
-from database import engine, get_db
+from database import engine, get_db, SessionLocal
 from models import Base
 from schemas import Shareholder, Company, Portfolio, OrderCreate, OrderResponse, TransactionResponse, OrderType, OrderSubType, MarketOrderResponse
 from typing import List, Union
@@ -22,17 +22,35 @@ def create_tables():
 
 create_tables()
 
+async def run_order_matching():
+    while True:
+        logger.info("Running automated order matching for all companies")
+        db = SessionLocal()
+        try:
+            companies = crud.get_all_companies(db)
+            for company in companies:
+                logger.info(f"Matching orders for company: {company.name} (ID: {company.id})")
+                match_orders(company.id, db)
+            logger.info("Completed order matching for all companies")
+        except Exception as e:
+            logger.error(f"Error in automated order matching: {str(e)}")
+        finally:
+            db.close()
+        await asyncio.sleep(3)  # Wait for 3 seconds before the next round
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    company_ticks_task = asyncio.create_task(run_company_ticks())
+    logger.info("Starting background tasks")
+    background_task = asyncio.create_task(run_order_matching())
     yield
     # Shutdown
-    company_ticks_task.cancel()
+    logger.info("Shutting down background tasks")
+    background_task.cancel()
     try:
-        await company_ticks_task
+        await background_task
     except asyncio.CancelledError:
-        logger.info("Company ticks task cancelled")
+        logger.info("Background task cancelled")
 
 app = FastAPI(lifespan=lifespan)
 
@@ -45,17 +63,14 @@ async def background_order_matching():
             companies = crud.get_all_companies(db)
             logger.info(f"Found {len(companies)} companies to process")
             for company in companies:
-                logger.info(f"Processing orders for company: {company.name}")
+                logger.info(f"Processing orders for company: {company.name} (ID: {company.id})")
                 match_orders(company.id, db)
+            logger.info("Background order matching cycle completed")
         except Exception as e:
-            logger.error(f"Error in background order matching: {str(e)}")
+            logger.error(f"Error in background order matching: {str(e)}", exc_info=True)
         finally:
             db.close()
         await asyncio.sleep(1)  # Run every second
-
-@app.on_event("startup")
-async def startup_event():
-    asyncio.create_task(background_order_matching())
 
 @app.post('/shareholders', response_model=Shareholder)
 async def create_shareholder(name: str, initial_cash: float, db: Session = Depends(get_db)):
@@ -92,9 +107,9 @@ async def get_all_companies(db: Session = Depends(get_db)):
 
 @app.post('/orders', response_model=Union[OrderResponse, MarketOrderResponse])
 async def create_order(order: OrderCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    db_order = crud.create_order(db, order)
+    db_order, error_message = crud.create_order(db, order)
     if not db_order:
-        raise HTTPException(status_code=400, detail="Order creation failed. Please check your inputs and try again.")
+        raise HTTPException(status_code=400, detail=error_message)
     
     if order.order_subtype == OrderSubType.MARKET:
         try:
@@ -108,6 +123,11 @@ async def create_order(order: OrderCreate, background_tasks: BackgroundTasks, db
     else:
         background_tasks.add_task(match_orders, order.company_id, db)
         return OrderResponse.from_orm(db_order)
+    
+@app.post('/trigger_matching/{company_id}')
+async def trigger_matching(company_id: str, db: Session = Depends(get_db)):
+    match_orders(company_id, db)
+    return {"message": "Order matching triggered"}
 
 @app.delete('/orders/{order_id}')
 async def cancel_order(order_id: str, db: Session = Depends(get_db)):

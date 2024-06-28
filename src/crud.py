@@ -9,6 +9,7 @@ import asyncio
 import uuid
 from sqlalchemy import func
 from database import SessionLocal 
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -202,7 +203,15 @@ def get_order_book(db: Session, company_id: str):
     sell_orders = db.query(Order).filter(Order.company_id == company_id, Order.order_type == OrderType.SELL).all()
     return {'buy': buy_orders, 'sell': sell_orders}
 
-def get_portfolio(db: Session, shareholder_id: str, company_id: str):
+def get_pending_sell_orders(db: Session, shareholder_id: str, company_id: str) -> int:
+    pending_shares = db.query(func.sum(Order.shares)).filter(
+        Order.shareholder_id == shareholder_id,
+        Order.company_id == company_id,
+        Order.order_type == OrderType.SELL
+    ).scalar()
+    return pending_shares or 0
+
+def get_portfolio(db: Session, shareholder_id: str, company_id: str) -> Optional[DBPortfolio]:
     return db.query(DBPortfolio).filter(
         DBPortfolio.shareholder_id == shareholder_id,
         DBPortfolio.company_id == company_id
@@ -256,3 +265,16 @@ def get_transaction_history(db: Session, company_id: str = None, shareholder_id:
     if shareholder_id:
         query = query.filter((Transaction.buyer_id == shareholder_id) | (Transaction.seller_id == shareholder_id))
     return query.order_by(Transaction.id.desc()).all()
+
+def get_total_buy_orders(db: Session, company_id: str) -> int:
+    total_shares = db.query(func.sum(Order.shares)).filter(
+        Order.company_id == company_id,
+        Order.order_type == OrderType.BUY
+    ).scalar()
+    return total_shares or 0
+
+def get_lowest_sell_order(db: Session, company_id: str):
+    return db.query(Order).filter(
+        Order.company_id == company_id,
+        Order.order_type == OrderType.SELL
+    ).order_by(Order.price.asc()).first()

@@ -10,18 +10,47 @@ from crud import update_stock_price
 logger = logging.getLogger(__name__)
 
 def match_orders(company_id: str, db: Session):
-    buy_orders = db.query(Order).filter(
+    # First, execute all market buy orders
+    market_buy_orders = db.query(Order).filter(
         Order.company_id == company_id,
-        Order.order_type == OrderType.BUY
+        Order.order_type == OrderType.BUY,
+        Order.order_subtype == OrderSubType.MARKET
+    ).all()
+
+    for market_buy_order in market_buy_orders:
+        try:
+            execute_market_order(market_buy_order, db)
+        except ValueError as e:
+            logger.warning(f"Failed to execute market buy order: {str(e)}")
+
+    # Then, execute all market sell orders
+    market_sell_orders = db.query(Order).filter(
+        Order.company_id == company_id,
+        Order.order_type == OrderType.SELL,
+        Order.order_subtype == OrderSubType.MARKET
+    ).all()
+
+    for market_sell_order in market_sell_orders:
+        try:
+            execute_market_order(market_sell_order, db)
+        except ValueError as e:
+            logger.warning(f"Failed to execute market sell order: {str(e)}")
+
+    # Finally, match limit orders as before
+    limit_buy_orders = db.query(Order).filter(
+        Order.company_id == company_id,
+        Order.order_type == OrderType.BUY,
+        Order.order_subtype == OrderSubType.LIMIT
     ).order_by(Order.price.desc()).all()
 
-    sell_orders = db.query(Order).filter(
+    limit_sell_orders = db.query(Order).filter(
         Order.company_id == company_id,
-        Order.order_type == OrderType.SELL
+        Order.order_type == OrderType.SELL,
+        Order.order_subtype == OrderSubType.LIMIT
     ).order_by(Order.price.asc()).all()
 
-    for buy_order in buy_orders:
-        for sell_order in sell_orders:
+    for buy_order in limit_buy_orders:
+        for sell_order in limit_sell_orders:
             if buy_order.price >= sell_order.price:
                 execute_trade(buy_order, sell_order, db)
                 if buy_order.shares == 0:
@@ -32,9 +61,8 @@ def match_orders(company_id: str, db: Session):
         if buy_order.shares > 0:
             db.add(buy_order)
 
-    update_stock_price(db, company_id)
-
     db.commit()
+    update_stock_price(db, company_id)
     logger.info(f"Matching completed for company {company_id}")
 
 def execute_trade(buy_order: Order, sell_order: Order, db: Session):
@@ -76,23 +104,22 @@ def execute_market_order(order: Order, db: Session):
     company = crud.get_company(db, order.company_id)
     buyer = crud.get_shareholder(db, order.shareholder_id)
 
-    matching_orders = db.query(Order).filter(
+    opposing_orders = db.query(Order).filter(
         Order.company_id == order.company_id,
-        Order.order_type == (OrderType.SELL if order.order_type == OrderType.BUY else OrderType.BUY)
+        Order.order_type != order.order_type
     ).order_by(Order.price.asc() if order.order_type == OrderType.BUY else Order.price.desc()).all()
     
     executed_shares = 0
     transactions = []
-    max_affordable_shares = 0
     
-    for matching_order in matching_orders:
+    for opposing_order in opposing_orders:
         if executed_shares >= order.shares:
             break
         
-        trade_shares = min(matching_order.shares, order.shares - executed_shares)
-        trade_price = matching_order.price or company.stock_price
+        trade_shares = min(opposing_order.shares, order.shares - executed_shares)
+        trade_price = opposing_order.price or company.stock_price
 
-        # Check if buyer has enough cash
+        # Check if buyer has enough cash for buy orders
         if order.order_type == OrderType.BUY:
             max_affordable_shares = int(buyer.cash // trade_price)
             if max_affordable_shares < trade_shares:
@@ -103,8 +130,8 @@ def execute_market_order(order: Order, db: Session):
 
         transaction = Transaction(
             id=str(uuid.uuid4()),
-            buyer_id=order.shareholder_id if order.order_type == OrderType.BUY else matching_order.shareholder_id,
-            seller_id=matching_order.shareholder_id if order.order_type == OrderType.BUY else order.shareholder_id,
+            buyer_id=order.shareholder_id if order.order_type == OrderType.BUY else opposing_order.shareholder_id,
+            seller_id=opposing_order.shareholder_id if order.order_type == OrderType.BUY else order.shareholder_id,
             company_id=order.company_id,
             shares=trade_shares,
             price_per_share=trade_price
@@ -114,31 +141,26 @@ def execute_market_order(order: Order, db: Session):
         transactions.append(transaction)
         
         executed_shares += trade_shares
-        matching_order.shares -= trade_shares
+        opposing_order.shares -= trade_shares
         
-        if matching_order.shares == 0:
-            db.delete(matching_order)
+        if opposing_order.shares == 0:
+            db.delete(opposing_order)
         else:
-            db.add(matching_order)
+            db.add(opposing_order)
 
         crud.update_shareholder_portfolio(db, transaction.buyer_id, order.company_id, trade_shares)
         crud.update_shareholder_portfolio(db, transaction.seller_id, order.company_id, -trade_shares)
         crud.update_shareholder_cash(db, transaction.buyer_id, -trade_shares * trade_price)
         crud.update_shareholder_cash(db, transaction.seller_id, trade_shares * trade_price)
 
-        company.stock_price = trade_price
-        db.add(company)
-
     # Remove the market order after execution
     db.delete(order)
     
     db.commit()
-
-    # Update the stock price after executing the market order
     update_stock_price(db, order.company_id)
 
     if executed_shares == 0:
-        raise ValueError(f"Could not execute market order. Maximum affordable shares: {max_affordable_shares}")
+        raise ValueError("Could not execute market order. No matching orders or insufficient funds.")
 
     logger.info(f"Market order executed: {executed_shares} shares in {len(transactions)} transactions")
     return transactions

@@ -36,6 +36,27 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+async def background_order_matching():
+    logger.info("Background order matching task started")
+    while True:
+        logger.info("Running background order matching cycle")
+        db = SessionLocal()
+        try:
+            companies = crud.get_all_companies(db)
+            logger.info(f"Found {len(companies)} companies to process")
+            for company in companies:
+                logger.info(f"Processing orders for company: {company.name}")
+                match_orders(company.id, db)
+        except Exception as e:
+            logger.error(f"Error in background order matching: {str(e)}")
+        finally:
+            db.close()
+        await asyncio.sleep(1)  # Run every second
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(background_order_matching())
+
 @app.post('/shareholders', response_model=Shareholder)
 async def create_shareholder(name: str, initial_cash: float, db: Session = Depends(get_db)):
     return crud.create_shareholder(db, name, initial_cash)

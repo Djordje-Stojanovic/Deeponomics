@@ -29,7 +29,7 @@ class OrderBookModel(QAbstractTableModel):
                     if col == 0:
                         return "Buy"
                     elif col == 1:
-                        return f"${order.price:.2f}"
+                        return f"${order.price:.2f}" if order.price is not None else "Market"
                     elif col == 2:
                         return str(order.shares)
             else:  # Sell orders
@@ -38,7 +38,7 @@ class OrderBookModel(QAbstractTableModel):
                     if col == 3:
                         return "Sell"
                     elif col == 4:
-                        return f"${order.price:.2f}"
+                        return f"${order.price:.2f}" if order.price is not None else "Market"
                     elif col == 5:
                         return str(order.shares)
         return None
@@ -133,18 +133,65 @@ class TradingWidget(QWidget):
 
         try:
             shares = int(self.shares_edit.text())
-            price = float(self.price_edit.text()) if self.order_subtype_combo.currentText() == "Limit" else None
+            order_subtype = OrderSubType.LIMIT if self.order_subtype_combo.currentText() == "Limit" else OrderSubType.MARKET
+            price = float(self.price_edit.text()) if order_subtype == OrderSubType.LIMIT else None
         except ValueError:
             QMessageBox.warning(self, "Error", "Invalid shares or price value.")
             return
 
         db = SessionLocal()
         try:
+            order_type = OrderType.BUY if self.order_type_combo.currentText() == "Buy" else OrderType.SELL
+            shareholder = crud.get_shareholder(db, self.current_user_id)
+            company = crud.get_company(db, company_id)
+
+            if order_type == OrderType.BUY:
+                if order_subtype == OrderSubType.LIMIT:
+                    required_funds = shares * price
+                else:  # Market order
+                    lowest_sell_order = crud.get_lowest_sell_order(db, company_id)
+                    if lowest_sell_order:
+                        estimated_price = lowest_sell_order.price
+                    else:
+                        # Use update_stock_price to get the most accurate current price
+                        estimated_price = crud.update_stock_price(db, company_id)
+                    
+                    required_funds = shares * estimated_price
+
+                if shareholder.cash < required_funds:
+                    QMessageBox.warning(self, "Error", f"Insufficient funds. You need approximately ${required_funds:.2f}, but you only have ${shareholder.cash:.2f}.")
+                    return
+
+                # Check if there are enough outstanding shares
+                total_buy_orders = crud.get_total_buy_orders(db, company_id)
+                if total_buy_orders + shares > company.outstanding_shares:
+                    QMessageBox.warning(self, "Error", f"Not enough outstanding shares. You can buy up to {company.outstanding_shares - total_buy_orders} shares.")
+                    return
+
+                if order_subtype == OrderSubType.MARKET:
+                    reply = QMessageBox.question(self, "Market Order Warning", 
+                        "The actual execution price for a market order may differ from the estimated price. Do you want to proceed?",
+                        QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+                    if reply == QMessageBox.No:
+                        return
+
+            elif order_type == OrderType.SELL:
+                portfolio = crud.get_portfolio(db, self.current_user_id, company_id)
+                if not portfolio:
+                    QMessageBox.warning(self, "Error", "You don't own any shares of this company.")
+                    return
+                available_shares = portfolio.shares
+                pending_sell_orders = crud.get_pending_sell_orders(db, self.current_user_id, company_id)
+                available_shares -= pending_sell_orders
+                if shares > available_shares:
+                    QMessageBox.warning(self, "Error", f"Not enough shares. You can sell up to {available_shares} shares.")
+                    return
+
             order = OrderCreate(
                 shareholder_id=self.current_user_id,
                 company_id=company_id,
-                order_type=OrderType.BUY if self.order_type_combo.currentText() == "Buy" else OrderType.SELL,
-                order_subtype=OrderSubType.LIMIT if self.order_subtype_combo.currentText() == "Limit" else OrderSubType.MARKET,
+                order_type=order_type,
+                order_subtype=order_subtype,
                 shares=shares,
                 price=price
             )

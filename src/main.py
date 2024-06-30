@@ -10,7 +10,7 @@ from schemas import Shareholder, Company, Portfolio, OrderCreate, OrderResponse,
 from typing import List, Union
 import crud
 import logging
-from services.order_matching import match_orders, execute_market_order
+from services.order_matching import match_orders, execute_market_order, cleanup_invalid_market_orders
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -30,7 +30,9 @@ async def run_order_matching():
             companies = crud.get_all_companies(db)
             for company in companies:
                 logger.info(f"Matching orders for company: {company.name} (ID: {company.id})")
-                match_orders(company.id, db)
+                match_orders(company.id, db)          
+                # Clean up invalid market orders
+                cleanup_invalid_market_orders(db)
             logger.info("Completed order matching for all companies")
         except Exception as e:
             logger.error(f"Error in automated order matching: {str(e)}")
@@ -107,22 +109,27 @@ async def get_all_companies(db: Session = Depends(get_db)):
 
 @app.post('/orders', response_model=Union[OrderResponse, MarketOrderResponse])
 async def create_order(order: OrderCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    db_order, error_message = crud.create_order(db, order)
-    if not db_order:
-        raise HTTPException(status_code=400, detail=error_message)
-    
-    if order.order_subtype == OrderSubType.MARKET:
-        try:
-            transactions = execute_market_order(db_order, db)
-            return MarketOrderResponse(
-                message=f"Market order executed: {len(transactions)} transactions",
-                transactions=[TransactionResponse.from_orm(t) for t in transactions]
-            )
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-    else:
-        background_tasks.add_task(match_orders, order.company_id, db)
-        return OrderResponse.from_orm(db_order)
+    try:
+        db_order = crud.create_order(db, order)
+        if not db_order:
+            raise HTTPException(status_code=400, detail="Order creation failed. Please check your inputs and try again.")
+        
+        if order.order_subtype == OrderSubType.MARKET:
+            try:
+                transactions = execute_market_order(db_order, db)
+                return MarketOrderResponse(
+                    message=f"Market order executed: {len(transactions)} transactions",
+                    transactions=[TransactionResponse.from_orm(t) for t in transactions]
+                )
+            except Exception as e:
+                logger.error(f"Error executing market order: {str(e)}")
+                raise HTTPException(status_code=400, detail=f"Error executing market order: {str(e)}")
+        else:
+            background_tasks.add_task(match_orders, order.company_id, db)
+            return OrderResponse.from_orm(db_order)
+    except Exception as e:
+        logger.error(f"Error creating order: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"An error occurred while processing the order: {str(e)}")
     
 @app.post('/trigger_matching/{company_id}')
 async def trigger_matching(company_id: str, db: Session = Depends(get_db)):

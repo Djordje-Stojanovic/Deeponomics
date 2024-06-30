@@ -3,7 +3,7 @@ import logging
 import random
 from sqlalchemy.orm import Session
 from models import DBShareholder, DBCompany, DBPortfolio, Order, Transaction
-from schemas import OrderCreate, OrderType
+from schemas import OrderCreate, OrderType, OrderSubType
 from fastapi import BackgroundTasks
 import asyncio
 import uuid
@@ -62,7 +62,7 @@ def update_stock_price(db: Session, company_id: str):
         logger.error(f"Company not found: {company_id}")
         return None
 
-    # Get the lowest current sell limit order price
+    # First, check for the lowest current sell limit order price
     lowest_sell_limit = db.query(Order).filter(
         Order.company_id == company_id,
         Order.order_type == OrderType.SELL,
@@ -71,42 +71,28 @@ def update_stock_price(db: Session, company_id: str):
 
     if lowest_sell_limit:
         new_price = lowest_sell_limit.price
+        logger.info(f"Setting price based on lowest sell limit order: ${new_price}")
     else:
-        # Check if there's a market sell order
-        market_sell_order = db.query(Order).filter(
-            Order.company_id == company_id,
-            Order.order_type == OrderType.SELL,
-            Order.order_subtype == OrderSubType.MARKET
-        ).first()
-
-        if market_sell_order:
-            # If there's a market sell order, use the latest transaction price
-            latest_transaction = db.query(Transaction).filter(
-                Transaction.company_id == company_id
-            ).order_by(Transaction.id.desc()).first()
-
-            if latest_transaction:
-                new_price = latest_transaction.price_per_share
-            else:
-                # If no transactions, use the initial company price
-                new_price = company.stock_price
+        # If no sell limit orders, get the latest transaction price
+        latest_transaction = db.query(Transaction).filter(
+            Transaction.company_id == company_id
+        ).order_by(Transaction.id.desc()).first()
+        
+        if latest_transaction:
+            new_price = latest_transaction.price_per_share
+            logger.info(f"Setting price based on latest transaction: ${new_price}")
         else:
-            # If no sell orders at all, use the latest transaction price
-            latest_transaction = db.query(Transaction).filter(
-                Transaction.company_id == company_id
-            ).order_by(Transaction.id.desc()).first()
-
-            if latest_transaction:
-                new_price = latest_transaction.price_per_share
-            else:
-                # If no transactions, keep the current price
-                new_price = company.stock_price
+            # If no transactions and no sell limit orders, keep the current price
+            new_price = company.stock_price
+            logger.info(f"No new price found, keeping current price: ${new_price}")
 
     if new_price != company.stock_price:
         company.stock_price = new_price
         db.add(company)
         db.commit()
-        logger.info(f"Updated stock price for company {company_id} to {new_price}")
+        logger.info(f"Updated stock price for company {company_id} to ${new_price}")
+    else:
+        logger.info(f"Stock price for company {company_id} remains unchanged at ${new_price}")
 
     return company.stock_price
 
@@ -165,10 +151,11 @@ def create_order(db: Session, order: OrderCreate):
         return None, f"Company not found: {order.company_id}"
 
     if order.order_type == OrderType.BUY:
-        # Check if the shareholder has enough cash
-        total_cost = order.shares * order.price
-        if shareholder.cash < total_cost:
-            return None, f"Insufficient funds. Required: {total_cost}, Available: {shareholder.cash}"
+        if order.order_subtype == OrderSubType.LIMIT:
+            # Check if the shareholder has enough cash for limit buy orders
+            total_cost = order.shares * order.price
+            if shareholder.cash < total_cost:
+                return None, f"Insufficient funds. Required: {total_cost}, Available: {shareholder.cash}"
 
         # Get shareholder's current portfolio
         portfolio = get_portfolio(db, order.shareholder_id, order.company_id)
@@ -187,16 +174,18 @@ def create_order(db: Session, order: OrderCreate):
         if order.shares > available_shares:
             return None, f"Not enough available shares. Requested: {order.shares}, Available: {available_shares}"
 
-        # Check if total cost of all buy orders (including this one) exceeds available cash
-        total_buy_orders_cost = db.query(func.sum(Order.shares * Order.price)).filter(
-            Order.shareholder_id == order.shareholder_id,
-            Order.company_id == order.company_id,
-            Order.order_type == OrderType.BUY
-        ).scalar() or 0
-        total_buy_orders_cost += total_cost
+        if order.order_subtype == OrderSubType.LIMIT:
+            # Check if total cost of all buy orders (including this one) exceeds available cash
+            total_buy_orders_cost = db.query(func.sum(Order.shares * Order.price)).filter(
+                Order.shareholder_id == order.shareholder_id,
+                Order.company_id == order.company_id,
+                Order.order_type == OrderType.BUY,
+                Order.order_subtype == OrderSubType.LIMIT
+            ).scalar() or 0
+            total_buy_orders_cost += total_cost
 
-        if total_buy_orders_cost > shareholder.cash:
-            return None, f"Insufficient funds for all buy orders. Required: {total_buy_orders_cost}, Available: {shareholder.cash}"
+            if total_buy_orders_cost > shareholder.cash:
+                return None, f"Insufficient funds for all buy orders. Required: {total_buy_orders_cost}, Available: {shareholder.cash}"
 
     elif order.order_type == OrderType.SELL:
         # Check if the shareholder owns enough shares
@@ -212,7 +201,7 @@ def create_order(db: Session, order: OrderCreate):
         order_type=order.order_type,
         order_subtype=order.order_subtype,
         shares=order.shares,
-        price=order.price
+        price=order.price if order.order_subtype == OrderSubType.LIMIT else None
     )
     db.add(db_order)
     try:

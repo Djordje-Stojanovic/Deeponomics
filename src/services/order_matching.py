@@ -72,7 +72,11 @@ def match_orders(company_id: str, db: Session):
             db.add(buy_order)
 
     db.commit()
-    crud.update_stock_price(db, company_id)
+
+    # Update the stock price after all orders have been processed
+    new_price = crud.update_stock_price(db, company_id)
+    logger.info(f"Final stock price update for company {company_id}: ${new_price}")
+
     logger.info(f"Matching completed for company {company_id}. Executed {matches} trades.")
     
 def execute_trade(buy_order: Order, sell_order: Order, db: Session):
@@ -127,42 +131,62 @@ def execute_trade(buy_order: Order, sell_order: Order, db: Session):
 
 def execute_market_order(order: Order, db: Session):
     company = crud.get_company(db, order.company_id)
+    if not company:
+        logger.error(f"Company not found: {order.company_id}")
+        return []
+
     buyer = crud.get_shareholder(db, order.shareholder_id) if order.order_type == OrderType.BUY else None
 
-    opposing_orders = db.query(Order).filter(
-        Order.company_id == order.company_id,
-        Order.order_type != order.order_type,
-        Order.order_subtype == OrderSubType.LIMIT  # Only match with limit orders
-    ).order_by(Order.price.asc() if order.order_type == OrderType.BUY else Order.price.desc()).all()
-    
+    # Get the last transaction price
+    last_transaction = db.query(Transaction).filter(Transaction.company_id == order.company_id).order_by(Transaction.id.desc()).first()
+    if last_transaction:
+        last_price = last_transaction.price_per_share
+    else:
+        last_price = company.stock_price
+
+    # Define the valid price range (±10% of last transaction price)
+    min_valid_price = last_price * 0.9
+    max_valid_price = last_price * 1.1
+
+    if order.order_type == OrderType.BUY:
+        opposing_orders = db.query(Order).filter(
+            Order.company_id == order.company_id,
+            Order.order_type == OrderType.SELL,
+            Order.order_subtype == OrderSubType.LIMIT,
+            Order.price <= max_valid_price
+        ).order_by(Order.price.asc()).all()
+    else:  # For market sell orders
+        opposing_orders = db.query(Order).filter(
+            Order.company_id == order.company_id,
+            Order.order_type == OrderType.BUY,
+            Order.order_subtype == OrderSubType.LIMIT,
+            Order.price >= min_valid_price
+        ).order_by(Order.price.desc()).all()
+
+    if not opposing_orders:
+        logger.info(f"No valid opposing orders found for market order {order.id}. Keeping the order in the book.")
+        return []
+
     executed_shares = 0
     transactions = []
-    
+
     for opposing_order in opposing_orders:
         if executed_shares >= order.shares:
             break
-        
+
         trade_shares = min(opposing_order.shares, order.shares - executed_shares)
         trade_price = opposing_order.price
 
-        # Check if this trade would exceed the company's outstanding shares
-        if order.order_type == OrderType.BUY:
-            total_shares = crud.get_total_shares_held(db, company.id)
-            if total_shares + trade_shares > company.outstanding_shares:
-                logger.warning(f"Trade would exceed outstanding shares. Adjusting trade size.")
-                trade_shares = company.outstanding_shares - total_shares
-                if trade_shares <= 0:
-                    logger.warning(f"No shares available for trade. Skipping this order.")
-                    continue
-
-        # Check if buyer has enough cash for buy orders
+        # For buy orders, ensure we don't exceed available cash
         if order.order_type == OrderType.BUY:
             max_affordable_shares = int(buyer.cash // trade_price)
             if max_affordable_shares < trade_shares:
-                if max_affordable_shares > 0:
-                    trade_shares = max_affordable_shares
-                else:
-                    break  # Can't afford any shares at this price
+                trade_shares = max_affordable_shares
+                if trade_shares == 0:
+                    logger.warning(f"Insufficient funds to buy any shares at price {trade_price}. Skipping this opposing order.")
+                    continue
+            total_cost = trade_shares * trade_price
+            buyer.cash -= total_cost
 
         transaction = Transaction(
             id=str(uuid.uuid4()),
@@ -172,13 +196,13 @@ def execute_market_order(order: Order, db: Session):
             shares=trade_shares,
             price_per_share=trade_price
         )
-        
+
         db.add(transaction)
         transactions.append(transaction)
-        
+
         executed_shares += trade_shares
         opposing_order.shares -= trade_shares
-        
+
         if opposing_order.shares == 0:
             db.delete(opposing_order)
         else:
@@ -186,26 +210,78 @@ def execute_market_order(order: Order, db: Session):
 
         crud.update_shareholder_portfolio(db, transaction.buyer_id, order.company_id, trade_shares)
         crud.update_shareholder_portfolio(db, transaction.seller_id, order.company_id, -trade_shares)
-        crud.update_shareholder_cash(db, transaction.buyer_id, -trade_shares * trade_price)
-        crud.update_shareholder_cash(db, transaction.seller_id, trade_shares * trade_price)
+        if order.order_type == OrderType.SELL:
+            crud.update_shareholder_cash(db, transaction.seller_id, trade_shares * trade_price)
 
     # Update the market order
     order.shares -= executed_shares
     if order.shares > 0:
-        db.add(order)  # Keep the order in the book if not fully executed
+        if order.order_type == OrderType.BUY:
+            logger.info(f"Market buy order partially executed. {order.shares} shares remaining unfilled due to insufficient funds or lack of matching sell orders.")
+        else:
+            logger.info(f"Market sell order partially executed. {order.shares} shares remaining unfilled due to lack of matching buy orders within the valid price range.")
+        db.add(order)  # Keep the remaining market order in the book
     else:
-        db.delete(order)  # Remove the order if fully executed
-    
+        db.delete(order)  # Remove the fully executed order
+
     db.commit()
-    # After processing the market order
-    crud.update_stock_price(db, order.company_id)
+
+    # Update the stock price after processing the market order
+    new_price = crud.update_stock_price(db, order.company_id)
+    logger.info(f"Updated stock price for company {order.company_id} to ${new_price} after market order execution")
 
     if executed_shares == 0:
-        logger.info(f"Market order {order.id} couldn't be executed. Keeping in the order book.")
+        logger.info(f"Market order {order.id} couldn't be executed.")
     else:
         logger.info(f"Market order partially executed: {executed_shares} shares in {len(transactions)} transactions")
-    
+
     return transactions
+
+def cleanup_invalid_market_orders(db: Session):
+    logger.info("Starting cleanup of invalid market orders")
+
+    # Get all market orders
+    market_orders = db.query(Order).filter(Order.order_subtype == OrderSubType.MARKET).all()
+
+    for order in market_orders:
+        company = crud.get_company(db, order.company_id)
+        if not company:
+            logger.error(f"Company not found for order {order.id}. Deleting the order.")
+            db.delete(order)
+            continue
+
+        last_transaction = db.query(Transaction).filter(Transaction.company_id == order.company_id).order_by(Transaction.id.desc()).first()
+        if not last_transaction:
+            logger.warning(f"No previous transactions found for company {order.company_id}. Using current stock price.")
+            last_price = company.stock_price
+        else:
+            last_price = last_transaction.price_per_share
+
+        min_valid_price = last_price * 0.9
+        max_valid_price = last_price * 1.1
+
+        # Check if there are any valid opposing limit orders
+        if order.order_type == OrderType.BUY:
+            valid_orders = db.query(Order).filter(
+                Order.company_id == order.company_id,
+                Order.order_type == OrderType.SELL,
+                Order.order_subtype == OrderSubType.LIMIT,
+                Order.price.between(min_valid_price, max_valid_price)
+            ).first()
+        else:
+            valid_orders = db.query(Order).filter(
+                Order.company_id == order.company_id,
+                Order.order_type == OrderType.BUY,
+                Order.order_subtype == OrderSubType.LIMIT,
+                Order.price.between(min_valid_price, max_valid_price)
+            ).first()
+
+        if not valid_orders:
+            logger.info(f"No valid opposing orders for market order {order.id}. Deleting the order.")
+            db.delete(order)
+
+    db.commit()
+    logger.info("Completed cleanup of invalid market orders")
 
 def update_portfolio(db: Session, shareholder_id: str, company_id: str, shares_change: int):
     portfolio = crud.get_portfolio(db, shareholder_id, company_id)

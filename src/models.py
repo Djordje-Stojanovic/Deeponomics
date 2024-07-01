@@ -30,6 +30,9 @@ class DBCompany(Base):
     stock_price = Column(Float)
     outstanding_shares = Column(Integer)
     
+    # Founder ID
+    founder_id = Column(String, ForeignKey("shareholders.id"))
+
     # Assets
     cash = Column(Float, default=0)
     short_term_investments = Column(Float, default=0)
@@ -47,7 +50,6 @@ class DBCompany(Base):
     
     last_update = Column(DateTime, default=func.now())
 
-
     # New fields for cash flow statement
     capex = Column(Float, default=0)
     gain_loss_investments = Column(Float, default=0)
@@ -62,6 +64,9 @@ class DBCompany(Base):
     change_in_nwc = Column(Float, default=0)
     interest_income = Column(Float, default=0)
 
+    # New attributes for CEO decision-making
+    capex_percentage = Column(Float, default=0.5)  # Default to 50%
+    cash_allocation = Column(Float, default=0.5)  # Default to 50% cash, 50% investments
 
     # Relationships
     portfolios = relationship("DBPortfolio", back_populates="company")
@@ -77,6 +82,20 @@ class DBCompany(Base):
     @property
     def total_equity(self):
         return self.total_assets - self.total_liabilities
+    
+    @property
+    def cfo(self):
+        net_income = self.annual_revenue * (1 - self.cost_of_revenue_percentage) * (1 - 0.21)  # Assuming 21% tax rate
+        return net_income + self.gain_loss_investments + self.interest_income - self.change_in_nwc    
+    
+    @property
+    def annual_capex(self):
+        annualcapex = self.capex * 365
+        return annualcapex
+
+    @property
+    def fcf(self):
+        return self.cfo - self.annual_capex
 
 class DBPortfolio(Base):
     __tablename__ = "portfolios"

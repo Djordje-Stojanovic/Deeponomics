@@ -4,6 +4,7 @@ from PySide6.QtCore import QTimer
 from .market_data_widget import MarketDataWidget
 from .trading_widget import TradingWidget
 from .portfolio_widget import PortfolioWidget
+from .ceo_widget import CEOWidget  # Import the new CEOWidget
 import crud
 from database import SessionLocal
 
@@ -12,6 +13,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Financial Market Simulation")
         self.current_user_id = None
+        self.current_company_id = None  # Add this line to store the current company ID
         self.setup_ui()
         self.setup_data_update_timer()
         if not self.login():
@@ -26,10 +28,12 @@ class MainWindow(QMainWindow):
         self.market_data_widget = MarketDataWidget()
         self.trading_widget = TradingWidget()
         self.portfolio_widget = PortfolioWidget()
+        self.ceo_widget = CEOWidget(self.current_company_id)  # Create the CEOWidget
         
         self.tab_widget.addTab(self.market_data_widget, "Market Data")
         self.tab_widget.addTab(self.trading_widget, "Trading")
         self.tab_widget.addTab(self.portfolio_widget, "Portfolio")
+        self.tab_widget.addTab(self.ceo_widget, "CEO Dashboard")  # Add the CEO Dashboard tab
         
         layout.addWidget(self.tab_widget)
 
@@ -43,6 +47,8 @@ class MainWindow(QMainWindow):
         self.trading_widget.update_companies()
         if self.current_user_id:
             self.portfolio_widget.update_data(self.current_user_id)
+        if self.current_company_id:
+            self.ceo_widget.load_company_settings()  # Update CEO widget with latest company settings
 
     def login(self):
         db = SessionLocal()
@@ -59,13 +65,22 @@ class MainWindow(QMainWindow):
         if ok and name:
             db = SessionLocal()
             shareholder = next((s for s in shareholders if s.name == name), None)
-            db.close()
             if shareholder:
                 self.current_user_id = shareholder.id
                 self.trading_widget.current_user_id = shareholder.id
+                
+                # Find the company where this shareholder is the founder (CEO)
+                company = crud.get_company_by_founder(db, shareholder.id)
+                if company:
+                    self.current_company_id = company.id
+                    self.ceo_widget.company_id = company.id  # Set the company ID for the CEO widget
+                    self.ceo_widget.load_company_settings()  # Load initial settings
+                
+                db.close()
                 self.setWindowTitle(f"Financial Market Simulation - Logged in as {name}")
                 return True
             else:
+                db.close()
                 QMessageBox.warning(self, "Error", f"Shareholder {name} not found.")
                 return False
         else:

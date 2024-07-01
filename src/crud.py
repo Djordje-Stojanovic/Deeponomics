@@ -431,18 +431,20 @@ def update_company_daily(db: Session, company_id: str):
         company.working_capital = required_working_capital
         daily_cfo -= working_capital_adjustment  # This adds to CFO because adjustment is negative
 
-    # Calculate daily capex (50% of remaining CFO)
-    daily_capex = daily_cfo * 0.5 if daily_cfo > 0 else 0
-    company.capex = daily_capex  # Set capex to daily value instead of accumulating
-
-    # Update business assets with capex
+    # Apply CEO's CAPEX decision
+    daily_capex = daily_cfo * company.capex_percentage
+    company.capex = daily_capex
     company.business_assets += daily_capex
 
-    # Calculate free cash flow
-    daily_free_cash_flow = daily_cfo - daily_capex
+    # Calculate remaining CFO after CAPEX
+    remaining_cfo = daily_cfo - daily_capex
 
-    # Update cash
-    company.cash += daily_free_cash_flow
+    # Apply CEO's cash vs short-term investments decision
+    cash_increase = remaining_cfo * company.cash_allocation
+    investments_increase = remaining_cfo * (1 - company.cash_allocation)
+
+    company.cash += cash_increase
+    company.short_term_investments += investments_increase
 
     # Simulate R&D effect on cost efficiency (simplified)
     if company.rd_spend_percentage > 0:
@@ -508,3 +510,6 @@ def get_balance_sheet(db: Session, company_id: str):
             "Total Equity": company.total_equity
         }
     }
+
+def get_company_by_founder(db: Session, founder_id: str):
+    return db.query(DBCompany).filter(DBCompany.founder_id == founder_id).first()

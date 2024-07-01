@@ -4,6 +4,7 @@ from .market_data_widget import MarketDataWidget
 from .trading_widget import TradingWidget
 from .portfolio_widget import PortfolioWidget
 from .ceo_widget import CEOWidget
+from .financials_widget import FinancialsWidget
 import crud
 from database import SessionLocal
 
@@ -28,11 +29,13 @@ class MainWindow(QMainWindow):
         self.trading_widget = TradingWidget()
         self.portfolio_widget = PortfolioWidget()
         self.ceo_widget = CEOWidget()
+        self.financials_widget = FinancialsWidget(self.current_company_id)
         
         self.tab_widget.addTab(self.market_data_widget, "Market Data")
         self.tab_widget.addTab(self.trading_widget, "Trading")
         self.tab_widget.addTab(self.portfolio_widget, "Portfolio")
         self.tab_widget.addTab(self.ceo_widget, "CEO Dashboard")
+        self.tab_widget.addTab(self.financials_widget, "Financials")
         
         layout.addWidget(self.tab_widget)
 
@@ -46,7 +49,8 @@ class MainWindow(QMainWindow):
         self.trading_widget.update_companies()
         if self.current_user_id:
             self.portfolio_widget.update_data(self.current_user_id)
-        # Remove the CEO widget update from here
+        if self.current_company_id:
+            self.financials_widget.update_data()
 
     def login(self):
         db = SessionLocal()
@@ -71,8 +75,9 @@ class MainWindow(QMainWindow):
                 if company:
                     self.current_company_id = company.id
                     self.ceo_widget.set_company_id(company.id)
-                    # Load company settings only once during login
+                    self.financials_widget.company_id = company.id
                     self.ceo_widget.load_company_settings()
+                    self.financials_widget.update_data()
                 else:
                     QMessageBox.warning(self, "Notice", "This shareholder is not a founder of any company.")
                 

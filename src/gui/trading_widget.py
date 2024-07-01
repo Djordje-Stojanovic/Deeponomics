@@ -109,7 +109,7 @@ class TradingWidget(QWidget):
         
         self.company_combo.clear()
         for company in self.companies:
-            self.company_combo.addItem(company.name, company.id)
+            self.company_combo.addItem(f"{company.name} ({company.sector.value})", company.id)
         
         if current_company_id:
             index = self.company_combo.findData(current_company_id)

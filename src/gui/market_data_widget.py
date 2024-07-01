@@ -8,7 +8,7 @@ class MarketDataModel(QAbstractTableModel):
     def __init__(self):
         super().__init__()
         self.companies = []
-        self.headers = ["Name", "Stock Price", "Revenue", "CFO", "CAPEX", "FCF"]
+        self.headers = ["Name", "Sector", "Stock Price", "Revenue", "CFO", "CAPEX", "FCF"]
 
     def rowCount(self, parent=QModelIndex()):
         return len(self.companies)
@@ -22,14 +22,16 @@ class MarketDataModel(QAbstractTableModel):
             if index.column() == 0:
                 return company.name
             elif index.column() == 1:
-                return f"${company.stock_price:.2f}"
+                return company.sector.value
             elif index.column() == 2:
-                return f"${company.annual_revenue:.2f}"
+                return f"${company.stock_price:.2f}"
             elif index.column() == 3:
-                return f"${company.cfo:.2f}"
+                return f"${company.annual_revenue:.2f}"
             elif index.column() == 4:
-                return f"${company.capex * 365:.2f}"  # Annualized CAPEX
+                return f"${company.cfo:.2f}"
             elif index.column() == 5:
+                return f"${company.capex * 365:.2f}"  # Annualized CAPEX
+            elif index.column() == 6:
                 return f"${company.fcf:.2f}"
         return None
 

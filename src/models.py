@@ -23,6 +23,19 @@ class DBShareholder(Base):
     portfolios = relationship("DBPortfolio", back_populates="shareholder")
     founded_companies = relationship("DBCompany", back_populates="founder")
 
+class Sector(str, Enum):
+    ENERGY = "Energy"
+    MATERIALS = "Materials"
+    INDUSTRIALS = "Industrials"
+    CONSUMER_DISCRETIONARY = "Consumer Discretionary"
+    CONSUMER_STAPLES = "Consumer Staples"
+    HEALTH_CARE = "Health Care"
+    FINANCIALS = "Financials"
+    INFORMATION_TECHNOLOGY = "Information Technology"
+    COMMUNICATION_SERVICES = "Communication Services"
+    UTILITIES = "Utilities"
+    REAL_ESTATE = "Real Estate"
+
 class DBCompany(Base):
     __tablename__ = "companies"
 
@@ -33,6 +46,9 @@ class DBCompany(Base):
     
     # Founder ID
     founder_id = Column(String, ForeignKey("shareholders.id"))
+
+    # Sector
+    sector = Column(SQLAlchemyEnum(Sector))
 
     # Assets
     cash = Column(Float, default=0)

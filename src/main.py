@@ -5,7 +5,7 @@ from crud import run_company_ticks
 from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks
 from sqlalchemy.orm import Session
 from database import engine, get_db, SessionLocal
-from models import Base
+from models import Base, Sector
 from schemas import Shareholder, Company, Portfolio, OrderCreate, OrderResponse, TransactionResponse, OrderType, OrderSubType, MarketOrderResponse
 from typing import List, Union
 import crud
@@ -108,8 +108,15 @@ async def get_all_shareholders(db: Session = Depends(get_db)):
     return crud.get_all_shareholders(db)
 
 @app.post('/companies', response_model=Company)
-async def create_company(name: str, initial_stock_price: float, initial_shares: int, founder_id: str, db: Session = Depends(get_db)):
-    company = crud.create_company(db, name, initial_stock_price, initial_shares, founder_id)
+async def create_company(
+    name: str, 
+    initial_stock_price: float, 
+    initial_shares: int, 
+    founder_id: str, 
+    sector: Sector,
+    db: Session = Depends(get_db)
+):
+    company = crud.create_company(db, name, initial_stock_price, initial_shares, founder_id, sector)
     if not company:
         raise HTTPException(status_code=400, detail="Failed to create company. Please check the founder ID and try again.")
     return company

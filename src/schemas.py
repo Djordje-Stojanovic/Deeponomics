@@ -11,6 +11,19 @@ class OrderSubType(str, Enum):
     LIMIT = 'limit'
     MARKET = 'market'
 
+class Sector(str, Enum):
+    ENERGY = "Energy"
+    MATERIALS = "Materials"
+    INDUSTRIALS = "Industrials"
+    CONSUMER_DISCRETIONARY = "Consumer Discretionary"
+    CONSUMER_STAPLES = "Consumer Staples"
+    HEALTH_CARE = "Health Care"
+    FINANCIALS = "Financials"
+    INFORMATION_TECHNOLOGY = "Information Technology"
+    COMMUNICATION_SERVICES = "Communication Services"
+    UTILITIES = "Utilities"
+    REAL_ESTATE = "Real Estate"
+
 class OrderCreate(BaseModel):
     shareholder_id: str
     company_id: str
@@ -30,7 +43,6 @@ class OrderResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-# Update other models similarly
 class Shareholder(BaseModel):
     id: str
     name: str
@@ -43,6 +55,7 @@ class Company(BaseModel):
     name: str
     stock_price: float
     outstanding_shares: int
+    sector: Sector  # Add the sector field here
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -2,7 +2,7 @@
 import logging
 import random
 from sqlalchemy.orm import Session
-from models import DBShareholder, DBCompany, DBPortfolio, Order, Transaction
+from models import DBShareholder, DBCompany, DBPortfolio, Order, Transaction, Sector
 from schemas import OrderCreate, OrderType, OrderSubType
 from fastapi import BackgroundTasks
 import asyncio
@@ -112,7 +112,7 @@ def get_shareholder(db: Session, shareholder_id: str):
 def get_all_shareholders(db: Session):
     return db.query(DBShareholder).all()
 
-def create_company(db: Session, name: str, initial_stock_price: float, initial_shares: int, founder_id: str):
+def create_company(db: Session, name: str, initial_stock_price: float, initial_shares: int, founder_id: str, sector: Sector):
     founder = get_shareholder(db, founder_id)
     if not founder:
         return None
@@ -124,7 +124,8 @@ def create_company(db: Session, name: str, initial_stock_price: float, initial_s
             name=name, 
             stock_price=initial_stock_price, 
             outstanding_shares=initial_shares,
-            founder_id=founder_id  # Set the founder_id here
+            founder_id=founder_id,
+            sector=sector  # Add the sector here
         )
         db.add(db_company)
         

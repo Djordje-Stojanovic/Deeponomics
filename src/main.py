@@ -49,10 +49,6 @@ async def run_company_updates():
                 before_cash = company.cash
                 before_cost = company.cost_of_revenue_percentage
                 updated_company = crud.update_company_daily(db, company.id)
-                
-                # Log only if there's a significant change
-                if abs(updated_company.cash - before_cash) > 0.01 or abs(updated_company.cost_of_revenue_percentage - before_cost) > 0.0001:
-                    logger.info(f"Company: {updated_company.name} - Cash: ${updated_company.cash:.2f} (Δ${updated_company.cash - before_cash:.2f}), Cost of Revenue: {updated_company.cost_of_revenue_percentage:.4f} (Δ{updated_company.cost_of_revenue_percentage - before_cost:.6f})")
         except Exception as e:
             logger.error(f"Error in company updates: {str(e)}")
         finally:
@@ -205,6 +201,13 @@ async def get_company_balance_sheet(company_id: str, db: Session = Depends(get_d
     if not balance_sheet:
         raise HTTPException(status_code=404, detail="Company not found")
     return balance_sheet
+
+@app.get("/companies/{company_id}/cash_flow_statement")
+async def get_company_cash_flow_statement(company_id: str, db: Session = Depends(get_db)):
+    cash_flow_statement = crud.get_cash_flow_statement(db, company_id)
+    if cash_flow_statement is None:
+        raise HTTPException(status_code=404, detail="Company not found or error generating cash flow statement")
+    return cash_flow_statement
 
 if __name__ == '__main__':
     import uvicorn

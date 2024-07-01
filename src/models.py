@@ -36,7 +36,6 @@ class DBCompany(Base):
     business_assets = Column(Float, default=100)
     working_capital = Column(Float, default=0)
     marketable_securities = Column(Float, default=0)
-    
     # Liabilities
     issued_bonds = Column(Float, default=0)
     issued_debt = Column(Float, default=0)
@@ -47,6 +46,22 @@ class DBCompany(Base):
     rd_spend_percentage = Column(Float, default=0.1)
     
     last_update = Column(DateTime, default=func.now())
+
+
+    # New fields for cash flow statement
+    capex = Column(Float, default=0)
+    gain_loss_investments = Column(Float, default=0)
+    acquisitions = Column(Float, default=0)
+    marketable_securities_investment = Column(Float, default=0)
+    debt_issued = Column(Float, default=0)
+    debt_repaid = Column(Float, default=0)
+    stock_issued = Column(Float, default=0)
+    stock_buyback = Column(Float, default=0)
+    dividends_paid = Column(Float, default=0)
+    special_dividends = Column(Float, default=0)
+    change_in_nwc = Column(Float, default=0)
+    interest_income = Column(Float, default=0)
+
 
     # Relationships
     portfolios = relationship("DBPortfolio", back_populates="company")

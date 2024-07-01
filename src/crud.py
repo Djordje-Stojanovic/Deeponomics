@@ -315,6 +315,64 @@ def get_total_shares_held(db: Session, company_id: str) -> int:
 
 from datetime import datetime, timedelta
 
+def get_cash_flow_statement(db: Session, company_id: str):
+    try:
+        company = db.query(DBCompany).filter(DBCompany.id == company_id).first()
+        if not company:
+            logger.error(f"Company with id {company_id} not found")
+            return None
+
+        # Get income statement for net income
+        income_statement = get_income_statement(db, company_id)
+        if not income_statement:
+            return None
+
+        net_income = income_statement['net_income']
+
+        # Calculate Cash from Operations (CFO)
+        cfo = net_income + company.gain_loss_investments + company.interest_income - company.change_in_nwc
+
+        # Calculate Cash from Investing (CFI)
+        cfi = -(company.capex + company.acquisitions + company.marketable_securities_investment)
+
+        # Calculate Cash from Financing (CFF)
+        cff = (company.debt_issued + company.stock_issued) - (company.debt_repaid + company.stock_buyback + company.dividends_paid + company.special_dividends)
+
+        # Calculate Net Change in Cash
+        net_change_in_cash = cfo + cfi + cff
+
+        # Calculate Free Cash Flow
+        free_cash_flow = cfo - company.capex
+
+        return {
+            "Cash from Operations (CFO)": {
+                "Net Income": net_income,
+                "Gain/Loss from Sale of Investments": company.gain_loss_investments,
+                "Interest Income": company.interest_income,
+                "Change in Net Working Capital": -company.change_in_nwc,  # Negative because increase in NWC reduces cash
+                "Total CFO": cfo
+            },
+            "Cash from Investing (CFI)": {
+                "Capital Expenditures (Capex)": company.capex,
+                "Acquisitions": company.acquisitions,
+                "Marketable Securities Investment": company.marketable_securities_investment,
+                "Total CFI": cfi
+            },
+            "Cash from Financing (CFF)": {
+                "Debt Issued": company.debt_issued,
+                "Debt Repaid": company.debt_repaid,
+                "Stock Issued/Repurchased": company.stock_issued - company.stock_buyback,
+                "Dividends Paid": company.dividends_paid,
+                "Special Dividends": company.special_dividends,
+                "Total CFF": cff
+            },
+            "Net Change in Cash": net_change_in_cash,
+            "Free Cash Flow": free_cash_flow
+        }
+    except Exception as e:
+        logger.error(f"Error generating cash flow statement for company {company_id}: {str(e)}")
+        return None
+
 def update_company_daily(db: Session, company_id: str):
     company = db.query(DBCompany).filter(DBCompany.id == company_id).first()
     if not company:
@@ -337,28 +395,31 @@ def update_company_daily(db: Session, company_id: str):
     daily_taxes = daily_ebt * 0.21  # 21% tax rate
     daily_net_income = daily_ebt - daily_taxes
 
-    # Update cash
-    company.cash += daily_net_income
+    # Calculate daily interest income from short-term investments
+    daily_interest_income = company.short_term_investments * (0.03 / 365)
+    company.interest_income = daily_interest_income
+    company.short_term_investments += daily_interest_income
 
-    # Update short-term investments (3% annual interest, calculated daily)
-    daily_investment_return = company.short_term_investments * (0.03 / 365)
-    company.short_term_investments += daily_investment_return
-    company.cash += daily_investment_return
+    # Calculate Cash from Operations (CFO)
+    daily_cfo = daily_net_income + (company.gain_loss_investments / 365) + daily_interest_income
 
     # Update working capital (10% of business assets)
     required_working_capital = company.business_assets * 0.1
     working_capital_adjustment = required_working_capital - company.working_capital
     
+    # Update change_in_nwc
+    company.change_in_nwc = working_capital_adjustment
+
     if working_capital_adjustment > 0:
         # Need to increase working capital
-        if company.cash >= working_capital_adjustment:
-            company.cash -= working_capital_adjustment
+        if daily_cfo >= working_capital_adjustment:
             company.working_capital += working_capital_adjustment
+            daily_cfo -= working_capital_adjustment
         else:
-            # Use short-term investments if cash is not enough
-            remaining_adjustment = working_capital_adjustment - company.cash
-            company.working_capital += company.cash
-            company.cash = 0
+            # Use CFO and short-term investments if needed
+            company.working_capital += daily_cfo
+            remaining_adjustment = working_capital_adjustment - daily_cfo
+            daily_cfo = 0
             if company.short_term_investments >= remaining_adjustment:
                 company.short_term_investments -= remaining_adjustment
                 company.working_capital += remaining_adjustment
@@ -366,9 +427,22 @@ def update_company_daily(db: Session, company_id: str):
                 company.working_capital += company.short_term_investments
                 company.short_term_investments = 0
     elif working_capital_adjustment < 0:
-        # Excess working capital, move to cash
+        # Excess working capital, move to CFO
         company.working_capital = required_working_capital
-        company.cash -= working_capital_adjustment
+        daily_cfo -= working_capital_adjustment  # This adds to CFO because adjustment is negative
+
+    # Calculate daily capex (50% of remaining CFO)
+    daily_capex = daily_cfo * 0.5 if daily_cfo > 0 else 0
+    company.capex = daily_capex  # Set capex to daily value instead of accumulating
+
+    # Update business assets with capex
+    company.business_assets += daily_capex
+
+    # Calculate free cash flow
+    daily_free_cash_flow = daily_cfo - daily_capex
+
+    # Update cash
+    company.cash += daily_free_cash_flow
 
     # Simulate R&D effect on cost efficiency (simplified)
     if company.rd_spend_percentage > 0:

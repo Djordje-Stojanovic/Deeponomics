@@ -10,6 +10,8 @@ import uuid
 from sqlalchemy import func
 from database import SessionLocal 
 from typing import Optional
+from datetime import datetime, timedelta
+import logging
 
 logger = logging.getLogger(__name__)
 
@@ -310,3 +312,125 @@ def get_lowest_sell_order(db: Session, company_id: str):
 def get_total_shares_held(db: Session, company_id: str) -> int:
     total_shares = db.query(func.sum(DBPortfolio.shares)).filter(DBPortfolio.company_id == company_id).scalar()
     return total_shares or 0
+
+from datetime import datetime, timedelta
+
+def update_company_daily(db: Session, company_id: str):
+    company = db.query(DBCompany).filter(DBCompany.id == company_id).first()
+    if not company:
+        logger.error(f"Company with id {company_id} not found")
+        return None
+
+    current_time = datetime.now()
+    
+    # Update revenue based on business assets
+    company.annual_revenue = company.business_assets
+    
+    # Calculate daily values
+    daily_revenue = company.annual_revenue / 365
+    daily_cost_of_revenue = daily_revenue * company.cost_of_revenue_percentage
+    daily_gross_profit = daily_revenue - daily_cost_of_revenue
+    daily_rd_spend = daily_gross_profit * company.rd_spend_percentage
+    daily_operating_income = daily_gross_profit - daily_rd_spend
+    daily_interest_expense = (company.issued_bonds + company.issued_debt) * 0.05 / 365  # Assuming 5% annual interest rate
+    daily_ebt = daily_operating_income - daily_interest_expense
+    daily_taxes = daily_ebt * 0.21  # 21% tax rate
+    daily_net_income = daily_ebt - daily_taxes
+
+    # Update cash
+    company.cash += daily_net_income
+
+    # Update short-term investments (3% annual interest, calculated daily)
+    daily_investment_return = company.short_term_investments * (0.03 / 365)
+    company.short_term_investments += daily_investment_return
+    company.cash += daily_investment_return
+
+    # Update working capital (10% of business assets)
+    required_working_capital = company.business_assets * 0.1
+    working_capital_adjustment = required_working_capital - company.working_capital
+    
+    if working_capital_adjustment > 0:
+        # Need to increase working capital
+        if company.cash >= working_capital_adjustment:
+            company.cash -= working_capital_adjustment
+            company.working_capital += working_capital_adjustment
+        else:
+            # Use short-term investments if cash is not enough
+            remaining_adjustment = working_capital_adjustment - company.cash
+            company.working_capital += company.cash
+            company.cash = 0
+            if company.short_term_investments >= remaining_adjustment:
+                company.short_term_investments -= remaining_adjustment
+                company.working_capital += remaining_adjustment
+            else:
+                company.working_capital += company.short_term_investments
+                company.short_term_investments = 0
+    elif working_capital_adjustment < 0:
+        # Excess working capital, move to cash
+        company.working_capital = required_working_capital
+        company.cash -= working_capital_adjustment
+
+    # Simulate R&D effect on cost efficiency (simplified)
+    if company.rd_spend_percentage > 0:
+        company.cost_of_revenue_percentage *= 0.9999  # Small daily improvement
+
+    company.last_update = current_time
+    db.commit()
+    return company
+
+def get_income_statement(db: Session, company_id: str):
+    try:
+        company = db.query(DBCompany).filter(DBCompany.id == company_id).first()
+        if not company:
+            logger.error(f"Company with id {company_id} not found")
+            return None
+
+        daily_revenue = company.annual_revenue / 365
+        daily_cost_of_revenue = daily_revenue * company.cost_of_revenue_percentage
+        daily_gross_profit = daily_revenue - daily_cost_of_revenue
+        daily_rd_spend = daily_gross_profit * company.rd_spend_percentage
+        daily_operating_income = daily_gross_profit - daily_rd_spend
+        daily_interest_expense = (company.issued_bonds + company.issued_debt) * 0.05 / 365  # Assuming 5% annual interest rate
+        daily_ebt = daily_operating_income - daily_interest_expense
+        daily_taxes = daily_ebt * 0.21
+        daily_net_income = daily_ebt - daily_taxes
+
+        return {
+            "revenue": daily_revenue,
+            "cost_of_revenue": daily_cost_of_revenue,
+            "gross_profit": daily_gross_profit,
+            "rd_spend": daily_rd_spend,
+            "operating_income": daily_operating_income,
+            "interest_expense": daily_interest_expense,
+            "ebt": daily_ebt,
+            "taxes": daily_taxes,
+            "net_income": daily_net_income
+        }
+    except Exception as e:
+        logger.error(f"Error generating income statement for company {company_id}: {str(e)}")
+        return None
+
+def get_balance_sheet(db: Session, company_id: str):
+    company = db.query(DBCompany).filter(DBCompany.id == company_id).first()
+    if not company:
+        logger.error(f"Company with id {company_id} not found")
+        return None
+
+    return {
+        "Assets": {
+            "Cash": company.cash,
+            "Short-term Investments": company.short_term_investments,
+            "Business Assets": company.business_assets,
+            "Working Capital": company.working_capital,
+            "Marketable Securities": company.marketable_securities,
+            "Total Assets": company.total_assets
+        },
+        "Liabilities": {
+            "Issued Bonds": company.issued_bonds,
+            "Issued Debt": company.issued_debt,
+            "Total Liabilities": company.total_liabilities
+        },
+        "Equity": {
+            "Total Equity": company.total_equity
+        }
+    }

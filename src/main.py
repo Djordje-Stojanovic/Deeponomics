@@ -40,19 +40,41 @@ async def run_order_matching():
             db.close()
         await asyncio.sleep(3)  # Wait for 3 seconds before the next round
 
+async def run_company_updates():
+    while True:
+        db = SessionLocal()
+        try:
+            companies = crud.get_all_companies(db)
+            for company in companies:
+                before_cash = company.cash
+                before_cost = company.cost_of_revenue_percentage
+                updated_company = crud.update_company_daily(db, company.id)
+                
+                # Log only if there's a significant change
+                if abs(updated_company.cash - before_cash) > 0.01 or abs(updated_company.cost_of_revenue_percentage - before_cost) > 0.0001:
+                    logger.info(f"Company: {updated_company.name} - Cash: ${updated_company.cash:.2f} (Δ${updated_company.cash - before_cash:.2f}), Cost of Revenue: {updated_company.cost_of_revenue_percentage:.4f} (Δ{updated_company.cost_of_revenue_percentage - before_cost:.6f})")
+        except Exception as e:
+            logger.error(f"Error in company updates: {str(e)}")
+        finally:
+            db.close()
+        await asyncio.sleep(1)  # Run every second (1 day in simulation)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting background tasks")
-    background_task = asyncio.create_task(run_order_matching())
+    order_matching_task = asyncio.create_task(run_order_matching())
+    company_update_task = asyncio.create_task(run_company_updates())
     yield
     # Shutdown
     logger.info("Shutting down background tasks")
-    background_task.cancel()
+    order_matching_task.cancel()
+    company_update_task.cancel()
     try:
-        await background_task
+        await order_matching_task
+        await company_update_task
     except asyncio.CancelledError:
-        logger.info("Background task cancelled")
+        logger.info("Background tasks cancelled")
 
 app = FastAPI(lifespan=lifespan)
 
@@ -170,22 +192,21 @@ async def get_transactions(company_id: str = None, shareholder_id: str = None, d
     transactions = crud.get_transaction_history(db, company_id, shareholder_id)
     return [TransactionResponse.from_orm(t) for t in transactions]
 
-@app.get('/companies/{company_id}/performance')
-async def get_company_performance(company_id: str, db: Session = Depends(get_db)):
-    company = crud.get_company(db, company_id)
-    if not company:
+@app.get("/companies/{company_id}/income_statement")
+async def get_company_income_statement(company_id: str, db: Session = Depends(get_db)):
+    income_statement = crud.get_income_statement(db, company_id)
+    if not income_statement:
         raise HTTPException(status_code=404, detail="Company not found")
-    return {
-        "id": company.id,
-        "name": company.name,
-        "stock_price": company.stock_price,
-        "revenue": company.revenue,
-        "costs": company.costs,
-        "profit": company.profit,
-        "total_profit": company.total_profit,
-        "days_active": company.days_active,
-    }
+    return income_statement
+
+@app.get("/companies/{company_id}/balance_sheet")
+async def get_company_balance_sheet(company_id: str, db: Session = Depends(get_db)):
+    balance_sheet = crud.get_balance_sheet(db, company_id)
+    if not balance_sheet:
+        raise HTTPException(status_code=404, detail="Company not found")
+    return balance_sheet
 
 if __name__ == '__main__':
     import uvicorn
     uvicorn.run(app, host='0.0.0.0', port=8000)
+

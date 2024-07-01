@@ -1,8 +1,8 @@
-#models.py
+# models.py
 import uuid
-from sqlalchemy import Column, String, Float, Integer, ForeignKey, Enum as SQLAlchemyEnum
+from sqlalchemy import Column, String, Float, Integer, ForeignKey, Enum as SQLAlchemyEnum, DateTime
 from sqlalchemy.orm import relationship
-from sqlalchemy import func, DateTime
+from sqlalchemy import func
 from database import Base
 from enum import Enum
 
@@ -22,16 +22,6 @@ class DBShareholder(Base):
     cash = Column(Float)
     portfolios = relationship("DBPortfolio", back_populates="shareholder")
 
-class DBStock(Base):
-    __tablename__ = "stocks"
-
-    id = Column(String, primary_key=True, index=True)
-    company_id = Column(String, ForeignKey("companies.id"))
-    current_price = Column(Float)
-    last_updated = Column(DateTime, default=func.now())
-
-    company = relationship("DBCompany", back_populates="stock")
-
 class DBCompany(Base):
     __tablename__ = "companies"
 
@@ -40,16 +30,38 @@ class DBCompany(Base):
     stock_price = Column(Float)
     outstanding_shares = Column(Integer)
     
-    # Maintain existing relationships
-    stock = relationship("DBStock", back_populates="company", uselist=False)
-    portfolios = relationship("DBPortfolio", back_populates="company")
+    # Assets
+    cash = Column(Float, default=0)
+    short_term_investments = Column(Float, default=0)
+    business_assets = Column(Float, default=100)
+    working_capital = Column(Float, default=0)
+    marketable_securities = Column(Float, default=0)
     
-    # New fields for performance metrics
-    revenue = Column(Float, default=0)
-    costs = Column(Float, default=0)
-    profit = Column(Float, default=0)
-    days_active = Column(Integer, default=0)
-    total_profit = Column(Float, default=0)
+    # Liabilities
+    issued_bonds = Column(Float, default=0)
+    issued_debt = Column(Float, default=0)
+    
+    # Other financial attributes
+    annual_revenue = Column(Float, default=0)
+    cost_of_revenue_percentage = Column(Float, default=0.7)
+    rd_spend_percentage = Column(Float, default=0.1)
+    
+    last_update = Column(DateTime, default=func.now())
+
+    # Relationships
+    portfolios = relationship("DBPortfolio", back_populates="company")
+
+    @property
+    def total_assets(self):
+        return self.cash + self.short_term_investments + self.business_assets + self.working_capital + self.marketable_securities
+
+    @property
+    def total_liabilities(self):
+        return self.issued_bonds + self.issued_debt
+
+    @property
+    def total_equity(self):
+        return self.total_assets - self.total_liabilities
 
 class DBPortfolio(Base):
     __tablename__ = "portfolios"

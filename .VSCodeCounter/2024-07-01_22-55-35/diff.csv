@@ -1,0 +1,13 @@
+"filename", "language", "Python", "comment", "blank", "total"
+"e:\Deeponomics\src\__init__.py", "Python", 0, 0, -1, -1
+"e:\Deeponomics\src\crud.py", "Python", -398, -36, -81, -515
+"e:\Deeponomics\src\database.py", "Python", -17, 0, -5, -22
+"e:\Deeponomics\src\gui\ceo_widget.py", "Python", 21, -3, 3, 21
+"e:\Deeponomics\src\gui\financials_widget.py", "Python", 72, 0, 18, 90
+"e:\Deeponomics\src\gui\main_window.py", "Python", 7, -2, 0, 5
+"e:\Deeponomics\src\gui_main.py", "Python", -10, -1, -2, -13
+"e:\Deeponomics\src\main.py", "Python", -184, -4, -28, -216
+"e:\Deeponomics\src\models.py", "Python", -96, -8, -26, -130
+"e:\Deeponomics\src\schemas.py", "Python", -53, -2, -15, -70
+"e:\Deeponomics\src\services\order_matching.py", "Python", -234, -13, -53, -300
+"Total", "-", -892, -69, -190, -1151

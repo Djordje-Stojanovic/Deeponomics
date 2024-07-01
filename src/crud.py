@@ -119,7 +119,13 @@ def create_company(db: Session, name: str, initial_stock_price: float, initial_s
     
     try:
         company_id = str(uuid.uuid4())
-        db_company = DBCompany(id=company_id, name=name, stock_price=initial_stock_price, outstanding_shares=initial_shares)
+        db_company = DBCompany(
+            id=company_id, 
+            name=name, 
+            stock_price=initial_stock_price, 
+            outstanding_shares=initial_shares,
+            founder_id=founder_id  # Set the founder_id here
+        )
         db.add(db_company)
         
         db_portfolio = DBPortfolio(shareholder_id=founder_id, company_id=company_id, shares=initial_shares)
@@ -132,8 +138,6 @@ def create_company(db: Session, name: str, initial_stock_price: float, initial_s
         db.rollback()
         logger.error(f"Error creating company: {str(e)}")
         return None
-    
-    return db_company
 
 def get_company(db: Session, company_id: str):
     return db.query(DBCompany).filter(DBCompany.id == company_id).first()

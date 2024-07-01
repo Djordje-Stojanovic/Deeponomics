@@ -1,17 +1,15 @@
-# src/gui/ceo_widget.py
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
-                               QSlider, QPushButton, QSpinBox)
+                               QSlider, QPushButton, QSpinBox, QMessageBox)
 from PySide6.QtCore import Qt, Signal
 import crud
 from database import SessionLocal
 
 class CEOWidget(QWidget):
-    # Signal to notify when settings are updated
     settings_updated = Signal()
 
-    def __init__(self, company_id):
+    def __init__(self):
         super().__init__()
-        self.company_id = company_id
+        self.company_id = None
         self.setup_ui()
 
     def setup_ui(self):
@@ -54,7 +52,16 @@ class CEOWidget(QWidget):
     def update_cash_inv_label(self, value):
         self.cash_inv_label.setText(f"Cash: {value}% | Investments: {100-value}%")
 
+    def set_company_id(self, company_id):
+        if self.company_id != company_id:
+            self.company_id = company_id
+            self.load_company_settings()
+
     def apply_changes(self):
+        if not self.company_id:
+            QMessageBox.warning(self, "Error", "No company selected.")
+            return
+
         capex_percentage = self.capex_slider.value() / 100
         cash_percentage = self.cash_inv_slider.value() / 100
 
@@ -62,20 +69,34 @@ class CEOWidget(QWidget):
         try:
             company = crud.get_company(db, self.company_id)
             if company:
-                # Update company settings
                 company.capex_percentage = capex_percentage
                 company.cash_allocation = cash_percentage
                 db.commit()
+                db.refresh(company)
                 self.settings_updated.emit()
+                QMessageBox.information(self, "Success", f"Changes applied successfully. CAPEX: {capex_percentage:.2%}, Cash Allocation: {cash_percentage:.2%}")
+            else:
+                QMessageBox.warning(self, "Error", f"Company with ID {self.company_id} not found.")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to apply changes: {str(e)}")
         finally:
             db.close()
 
     def load_company_settings(self):
+        if not self.company_id:
+            return
+
         db = SessionLocal()
         try:
             company = crud.get_company(db, self.company_id)
             if company:
                 self.capex_slider.setValue(int(company.capex_percentage * 100))
                 self.cash_inv_slider.setValue(int(company.cash_allocation * 100))
+                self.update_capex_label(self.capex_slider.value())
+                self.update_cash_inv_label(self.cash_inv_slider.value())
+            else:
+                QMessageBox.warning(self, "Error", f"Company with ID {self.company_id} not found.")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to load company settings: {str(e)}")
         finally:
             db.close()

@@ -21,6 +21,7 @@ class DBShareholder(Base):
     name = Column(String, index=True)
     cash = Column(Float)
     portfolios = relationship("DBPortfolio", back_populates="shareholder")
+    founded_companies = relationship("DBCompany", back_populates="founder")
 
 class DBCompany(Base):
     __tablename__ = "companies"
@@ -70,6 +71,7 @@ class DBCompany(Base):
 
     # Relationships
     portfolios = relationship("DBPortfolio", back_populates="company")
+    founder = relationship("DBShareholder", back_populates="founded_companies")
 
     @property
     def total_assets(self):

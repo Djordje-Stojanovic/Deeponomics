@@ -26,11 +26,11 @@ class MarketDataModel(QAbstractTableModel):
             elif index.column() == 2:
                 return f"${company.annual_revenue:.2f}"
             elif index.column() == 3:
-                return f"${self.get_cfo(company):.2f}"
+                return f"${company.cfo:.2f}"
             elif index.column() == 4:
-                return f"${company.annual_capex:.2f}"
+                return f"${company.capex * 365:.2f}"  # Annualized CAPEX
             elif index.column() == 5:
-                return f"${self.get_fcf(company):.2f}"
+                return f"${company.fcf:.2f}"
         return None
 
     def headerData(self, section, orientation, role):

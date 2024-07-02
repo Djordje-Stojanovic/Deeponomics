@@ -337,10 +337,13 @@ def get_cash_flow_statement(db: Session, company_id: str):
         cfo = net_income + company.gain_loss_investments + company.interest_income - company.change_in_nwc
 
         # Calculate Cash from Investing (CFI)
-        cfi = -(company.capex + company.acquisitions + company.marketable_securities_investment)
+        cfi = -company.capex  # Daily CAPEX
+
+        # Calculate daily dividend accrual
+        daily_dividend_accrual = cfo * company.dividend_payout_percentage
 
         # Calculate Cash from Financing (CFF)
-        cff = (company.debt_issued + company.stock_issued) - (company.debt_repaid + company.stock_buyback + company.dividends_paid + company.special_dividends)
+        cff = (company.debt_issued + company.stock_issued) - (company.debt_repaid + company.stock_buyback + daily_dividend_accrual)
 
         # Calculate Net Change in Cash
         net_change_in_cash = cfo + cfi + cff
@@ -357,17 +360,14 @@ def get_cash_flow_statement(db: Session, company_id: str):
                 "Total CFO": cfo
             },
             "Cash from Investing (CFI)": {
-                "Capital Expenditures (Capex)": company.capex,
-                "Acquisitions": company.acquisitions,
-                "Marketable Securities Investment": company.marketable_securities_investment,
+                "Capital Expenditures (Capex)": -company.capex,
                 "Total CFI": cfi
             },
             "Cash from Financing (CFF)": {
                 "Debt Issued": company.debt_issued,
-                "Debt Repaid": company.debt_repaid,
+                "Debt Repaid": -company.debt_repaid,
                 "Stock Issued/Repurchased": company.stock_issued - company.stock_buyback,
-                "Dividends Paid": company.dividends_paid,
-                "Special Dividends": company.special_dividends,
+                "Dividend Accrual": -daily_dividend_accrual,  # Show as negative because it's cash outflow
                 "Total CFF": cff
             },
             "Net Change in Cash": net_change_in_cash,
@@ -535,12 +535,29 @@ def get_balance_sheet(db: Session, company_id: str):
         "Liabilities": {
             "Issued Bonds": company.issued_bonds,
             "Issued Debt": company.issued_debt,
-            "Total Liabilities": company.total_liabilities
+            "Dividend Reserve": company.dividend_account,  # Add this line
+            "Total Liabilities": company.total_liabilities + company.dividend_account  # Update this line
         },
         "Equity": {
-            "Total Equity": company.total_equity
+            "Total Equity": company.total_equity - company.dividend_account  # Update this line
         }
     }
 
 def get_company_by_founder(db: Session, founder_id: str):
     return db.query(DBCompany).filter(DBCompany.founder_id == founder_id).first()
+
+def get_next_dividend_date(current_date: datetime) -> datetime:
+    year = current_date.year
+    month = current_date.month
+    day = current_date.day
+
+    if month < 3 or (month == 3 and day <= 31):
+        return datetime(year, 3, 31)
+    elif month < 6 or (month == 6 and day <= 30):
+        return datetime(year, 6, 30)
+    elif month < 9 or (month == 9 and day <= 30):
+        return datetime(year, 9, 30)
+    elif month < 12 or (month == 12 and day <= 31):
+        return datetime(year, 12, 31)
+    else:
+        return datetime(year + 1, 3, 31)

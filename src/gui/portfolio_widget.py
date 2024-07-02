@@ -3,6 +3,8 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QTableView, QLabel
 from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex
 import crud
 from database import SessionLocal
+from sqlalchemy import func
+from models import DBCompany
 
 class PortfolioModel(QAbstractTableModel):
     def __init__(self):
@@ -72,6 +74,9 @@ class PortfolioWidget(QWidget):
         self.total_value_label = QLabel("Total Portfolio Value: $0.00")
         layout.addWidget(self.total_value_label)
 
+        self.next_dividend_label = QLabel("Next Dividend Date: N/A")
+        layout.addWidget(self.next_dividend_label)
+
         self.table_view = QTableView()
         self.model = PortfolioModel()
         self.table_view.setModel(self.model)
@@ -79,13 +84,33 @@ class PortfolioWidget(QWidget):
 
     def update_data(self, shareholder_id):
         db = SessionLocal()
-        shareholder = crud.get_shareholder(db, shareholder_id)
-        self.cash_balance_label.setText(f"Cash Balance: ${shareholder.cash:.2f}")
-        
-        self.model.update_data(shareholder_id)
-        
-        total_value = sum(holding['total_value'] for holding in self.model.portfolio)
-        total_value += shareholder.cash  # Include cash in total portfolio value
-        self.total_value_label.setText(f"Total Portfolio Value: ${total_value:.2f}")
-        
-        db.close()
+        try:
+            shareholder = crud.get_shareholder(db, shareholder_id)
+            if shareholder:
+                self.cash_balance_label.setText(f"Cash Balance: ${shareholder.cash:.2f}")
+                
+                self.model.update_data(shareholder_id)
+                
+                total_value = sum(holding['total_value'] for holding in self.model.portfolio)
+                total_value += shareholder.cash  # Include cash in total portfolio value
+                self.total_value_label.setText(f"Total Portfolio Value: ${total_value:.2f}")
+                
+                # Update Next Dividend Date
+                current_date = db.query(func.max(DBCompany.last_update)).scalar()
+                if current_date:
+                    next_dividend_date = crud.get_next_dividend_date(current_date)
+                    self.next_dividend_label.setText(f"Next Dividend Date: {next_dividend_date.strftime('%Y-%m-%d')}")
+                else:
+                    self.next_dividend_label.setText("Next Dividend Date: N/A")
+            else:
+                print(f"Shareholder with ID {shareholder_id} not found")
+                self.cash_balance_label.setText("Cash Balance: N/A")
+                self.total_value_label.setText("Total Portfolio Value: N/A")
+                self.next_dividend_label.setText("Next Dividend Date: N/A")
+        except Exception as e:
+            print(f"Error updating portfolio widget data: {str(e)}")
+            self.cash_balance_label.setText("Cash Balance: Error")
+            self.total_value_label.setText("Total Portfolio Value: Error")
+            self.next_dividend_label.setText("Next Dividend Date: Error")
+        finally:
+            db.close()

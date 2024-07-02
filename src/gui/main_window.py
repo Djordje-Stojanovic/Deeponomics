@@ -8,6 +8,8 @@ from .financials_widget import FinancialsWidget
 import crud
 from database import SessionLocal
 from datetime import time, datetime
+from sqlalchemy import func
+from models import DBCompany
 
 class MainWindow(QMainWindow):
     def __init__(self):

@@ -3,6 +3,9 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
 from PySide6.QtCore import Qt, Signal
 import crud
 from database import SessionLocal
+from sqlalchemy import func
+from models import DBCompany
+from datetime import datetime
 
 class CEOWidget(QWidget):
     settings_updated = Signal()
@@ -14,6 +17,10 @@ class CEOWidget(QWidget):
 
     def setup_ui(self):
         layout = QVBoxLayout(self)
+
+        # Add Next Dividend Date Label
+        self.next_dividend_label = QLabel("Next Dividend Date: N/A")
+        layout.addWidget(self.next_dividend_label)
 
         # CAPEX Slider
         capex_layout = QHBoxLayout()
@@ -71,6 +78,7 @@ class CEOWidget(QWidget):
         if self.company_id != company_id:
             self.company_id = company_id
             self.load_company_settings()
+            self.update_data()  # Add this line to update the dividend date when company is set
 
     def apply_changes(self):
         if not self.company_id:
@@ -117,5 +125,23 @@ class CEOWidget(QWidget):
                 QMessageBox.warning(self, "Error", f"Company with ID {self.company_id} not found.")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to load company settings: {str(e)}")
+        finally:
+            db.close()
+
+    def update_data(self):
+        if not self.company_id:
+            return
+
+        db = SessionLocal()
+        try:
+            current_date = db.query(func.max(DBCompany.last_update)).scalar()
+            if current_date:
+                next_dividend_date = crud.get_next_dividend_date(current_date)
+                self.next_dividend_label.setText(f"Next Dividend Date: {next_dividend_date.strftime('%Y-%m-%d')}")
+            else:
+                self.next_dividend_label.setText("Next Dividend Date: N/A")
+        except Exception as e:
+            print(f"Error updating CEO widget data: {str(e)}")
+            self.next_dividend_label.setText("Next Dividend Date: Error")
         finally:
             db.close()

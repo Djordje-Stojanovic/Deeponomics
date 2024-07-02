@@ -11,6 +11,7 @@ from typing import List, Union
 import crud
 import logging
 from services.order_matching import match_orders, execute_market_order, cleanup_invalid_market_orders
+from datetime import datetime, timedelta
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -22,37 +23,44 @@ def create_tables():
 
 create_tables()
 
+class SimulationState:
+    def __init__(self):
+        self.is_paused = False
+        self.current_date = datetime(2020, 1, 1)  # Start date: Jan 1, 2020
+
+simulation_state = SimulationState()
+
 async def run_order_matching():
     while True:
-        logger.info("Running automated order matching for all companies")
-        db = SessionLocal()
-        try:
-            companies = crud.get_all_companies(db)
-            for company in companies:
-                logger.info(f"Matching orders for company: {company.name} (ID: {company.id})")
-                match_orders(company.id, db)          
-                # Clean up invalid market orders
-                cleanup_invalid_market_orders(db)
-            logger.info("Completed order matching for all companies")
-        except Exception as e:
-            logger.error(f"Error in automated order matching: {str(e)}")
-        finally:
-            db.close()
-        await asyncio.sleep(3)  # Wait for 3 seconds before the next round
+        if not simulation_state.is_paused:
+            logger.info("Running automated order matching for all companies")
+            db = SessionLocal()
+            try:
+                companies = crud.get_all_companies(db)
+                for company in companies:
+                    logger.info(f"Matching orders for company: {company.name} (ID: {company.id})")
+                    match_orders(company.id, db)          
+                    cleanup_invalid_market_orders(db)
+                logger.info("Completed order matching for all companies")
+            except Exception as e:
+                logger.error(f"Error in automated order matching: {str(e)}")
+            finally:
+                db.close()
+        await asyncio.sleep(1)  # Wait for 1 second before the next round
 
 async def run_company_updates():
     while True:
-        db = SessionLocal()
-        try:
-            companies = crud.get_all_companies(db)
-            for company in companies:
-                before_cash = company.cash
-                before_cost = company.cost_of_revenue_percentage
-                updated_company = crud.update_company_daily(db, company.id)
-        except Exception as e:
-            logger.error(f"Error in company updates: {str(e)}")
-        finally:
-            db.close()
+        if not simulation_state.is_paused:
+            db = SessionLocal()
+            try:
+                companies = crud.get_all_companies(db)
+                for company in companies:
+                    crud.update_company_daily(db, company.id)
+                simulation_state.current_date += timedelta(days=1)
+            except Exception as e:
+                logger.error(f"Error in company updates: {str(e)}")
+            finally:
+                db.close()
         await asyncio.sleep(1)  # Run every second (1 day in simulation)
 
 @asynccontextmanager
@@ -91,6 +99,15 @@ async def background_order_matching():
         finally:
             db.close()
         await asyncio.sleep(1)  # Run every second
+
+@app.post("/toggle_pause")
+async def toggle_pause():
+    simulation_state.is_paused = not simulation_state.is_paused
+    return {"paused": simulation_state.is_paused}
+
+@app.get("/simulation_date")
+async def get_simulation_date():
+    return {"date": simulation_state.current_date.isoformat()}
 
 @app.post('/shareholders', response_model=Shareholder)
 async def create_shareholder(name: str, initial_cash: float, db: Session = Depends(get_db)):

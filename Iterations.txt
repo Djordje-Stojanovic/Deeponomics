@@ -40,9 +40,9 @@ Deeponomics: Next 5 Iterations
 Iteration 8: Enhanced Market Dynamics
 
 Implement basic market sectors (e.g., Technology, Finance, Healthcare)
-Create a simple news system that impacts stock prices
 Add support for stock splits and dividends
-Implement a basic market sentiment indicator
+Implement a basic company performance update system
+Add more complex order types (limit orders, market orders)
 
 Iteration 9: Improved Trader Simulation
 
@@ -58,15 +58,18 @@ Create a basic system for economic cycles that affect different sectors
 Add simple global events that impact the overall market
 Implement a rudimentary central bank that can adjust interest rates
 
-Iteration 11: Advanced Order Types and Trading Mechanisms
+Iteration 11: News and Market Sentiment
 
-Add support for limit orders and stop orders
+Create a simple news generation system with sector-specific and company-specific news
+Implement a mechanism for news to impact AI trader behavior and stock prices
+Add a basic market sentiment indicator influenced by news and market performance
+Develop a simple interface for users to view news and market sentiment
+
+Iteration 12: Advanced Trading Mechanisms and Analysis
+
+Add support for stop orders and short selling
 Implement a basic order routing system
 Create a simple market maker mechanism to provide liquidity
-Add support for short selling
-
-Iteration 12: Data Analysis and Reporting
-
 Implement basic charting tools for stock price history
 Create a simple screening tool for stocks based on financial metrics
 Add a feature to view historical financial statements for companies

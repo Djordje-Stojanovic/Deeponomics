@@ -1,5 +1,5 @@
-from PySide6.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QTabWidget, QInputDialog, QMessageBox
-from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QTabWidget, QInputDialog, QMessageBox, QPushButton, QLabel, QHBoxLayout
+from PySide6.QtCore import QTimer, QDateTime, Qt
 from .market_data_widget import MarketDataWidget
 from .trading_widget import TradingWidget
 from .portfolio_widget import PortfolioWidget
@@ -7,6 +7,7 @@ from .ceo_widget import CEOWidget
 from .financials_widget import FinancialsWidget
 import crud
 from database import SessionLocal
+from datetime import time, datetime
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -14,6 +15,8 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Financial Market Simulation")
         self.current_user_id = None
         self.current_company_id = None
+        self.simulation_date = QDateTime(2020, 1, 1, 0, 0, 0)  # Start date: Jan 1, 2020
+        self.is_paused = False
         self.setup_ui()
         self.setup_data_update_timer()
         if not self.login():
@@ -22,7 +25,20 @@ class MainWindow(QMainWindow):
     def setup_ui(self):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        layout = QVBoxLayout(central_widget)
+        main_layout = QVBoxLayout(central_widget)
+        
+        # Add control bar with pause button and date display
+        control_bar = QHBoxLayout()
+        self.pause_button = QPushButton("Pause")
+        self.pause_button.clicked.connect(self.toggle_pause)
+        self.date_label = QLabel()
+        self.update_date_display()
+        
+        control_bar.addWidget(self.pause_button)
+        control_bar.addWidget(self.date_label)
+        control_bar.addStretch()  # This pushes the date label to the right
+        
+        main_layout.addLayout(control_bar)
         
         self.tab_widget = QTabWidget()
         self.market_data_widget = MarketDataWidget()
@@ -37,7 +53,7 @@ class MainWindow(QMainWindow):
         self.tab_widget.addTab(self.ceo_widget, "CEO Dashboard")
         self.tab_widget.addTab(self.financials_widget, "Financials")
         
-        layout.addWidget(self.tab_widget)
+        main_layout.addWidget(self.tab_widget)
 
     def setup_data_update_timer(self):
         self.timer = QTimer(self)
@@ -45,12 +61,25 @@ class MainWindow(QMainWindow):
         self.timer.start(1000)  # Update every second
 
     def update_data(self):
-        self.market_data_widget.update_data()
-        self.trading_widget.update_companies()
-        if self.current_user_id:
-            self.portfolio_widget.update_data(self.current_user_id)
-        if self.current_company_id:
-            self.financials_widget.update_data()
+        if not self.is_paused:
+            self.simulation_date = self.simulation_date.addDays(1)
+            self.update_date_display()
+            self.market_data_widget.update_data()
+            self.trading_widget.update_companies()
+            if self.current_user_id:
+                self.portfolio_widget.update_data(self.current_user_id)
+            if self.current_company_id:
+                self.financials_widget.update_data()
+
+    def update_date_display(self):
+        self.date_label.setText(f"Simulation Date: {self.simulation_date.toString('yyyy-MM-dd')}")
+
+    def toggle_pause(self):
+        self.is_paused = not self.is_paused
+        if self.is_paused:
+            self.pause_button.setText("Resume")
+        else:
+            self.pause_button.setText("Pause")
 
     def login(self):
         db = SessionLocal()

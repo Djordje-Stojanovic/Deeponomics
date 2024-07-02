@@ -1,28 +1,31 @@
-Date : 2024-07-01 15:05:50
-Directory : e:\Deeponomics\src\gui
-Total : 4 files,  349 codes, 10 comments, 61 blanks, all 420 lines
+Date : 2024-07-01 23:43:08
+Directory : e:\Deeponomics\src
+Total : 5 files,  36 codes, 0 comments, 3 blanks, all 39 lines
 
 Languages
 +----------+------------+------------+------------+------------+------------+
 | language | files      | code       | comment    | blank      | total      |
 +----------+------------+------------+------------+------------+------------+
-| Python   |          4 |        349 |         10 |         61 |        420 |
+| Python   |          5 |         36 |          0 |          3 |         39 |
 +----------+------------+------------+------------+------------+------------+
 
 Directories
 +----------------------------------------------+------------+------------+------------+------------+------------+
 | path                                         | files      | code       | comment    | blank      | total      |
 +----------------------------------------------+------------+------------+------------+------------+------------+
-| .                                            |          4 |        349 |         10 |         61 |        420 |
+| .                                            |          5 |         36 |          0 |          3 |         39 |
+| . (Files)                                    |          4 |         34 |          0 |          3 |         37 |
+| gui                                          |          1 |          2 |          0 |          0 |          2 |
 +----------------------------------------------+------------+------------+------------+------------+------------+
 
 Files
 +----------------------------------------------+----------+------------+------------+------------+------------+
 | filename                                     | language | code       | comment    | blank      | total      |
 +----------------------------------------------+----------+------------+------------+------------+------------+
-| e:\Deeponomics\src\gui\main_window.py        | Python   |         60 |          1 |         11 |         72 |
-| e:\Deeponomics\src\gui\market_data_widget.py | Python   |         46 |          1 |          9 |         56 |
-| e:\Deeponomics\src\gui\portfolio_widget.py   | Python   |         66 |          3 |         11 |         80 |
-| e:\Deeponomics\src\gui\trading_widget.py     | Python   |        177 |          5 |         30 |        212 |
-| Total                                        |          |        349 |         10 |         61 |        420 |
+| e:\Deeponomics\src\crud.py                   | Python   |          1 |          0 |          0 |          1 |
+| e:\Deeponomics\src\gui\market_data_widget.py | Python   |          2 |          0 |          0 |          2 |
+| e:\Deeponomics\src\main.py                   | Python   |          7 |          0 |          0 |          7 |
+| e:\Deeponomics\src\models.py                 | Python   |         13 |          1 |          2 |         16 |
+| e:\Deeponomics\src\schemas.py                | Python   |         13 |         -1 |          1 |         13 |
+| Total                                        |          |         36 |          0 |          3 |         39 |
 +----------------------------------------------+----------+------------+------------+------------+------------+

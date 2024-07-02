@@ -55,7 +55,7 @@ async def run_company_updates():
             try:
                 companies = crud.get_all_companies(db)
                 for company in companies:
-                    crud.update_company_daily(db, company.id)
+                    crud.update_company_daily(db, company.id, simulation_state.current_date)
                 simulation_state.current_date += timedelta(days=1)
             except Exception as e:
                 logger.error(f"Error in company updates: {str(e)}")

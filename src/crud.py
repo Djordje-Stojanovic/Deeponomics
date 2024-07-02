@@ -11,7 +11,6 @@ from sqlalchemy import func
 from database import SessionLocal 
 from typing import Optional
 from datetime import datetime, timedelta
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -378,14 +377,12 @@ def get_cash_flow_statement(db: Session, company_id: str):
         logger.error(f"Error generating cash flow statement for company {company_id}: {str(e)}")
         return None
 
-def update_company_daily(db: Session, company_id: str):
+def update_company_daily(db: Session, company_id: str, current_date: datetime):
     company = db.query(DBCompany).filter(DBCompany.id == company_id).first()
     if not company:
         logger.error(f"Company with id {company_id} not found")
         return None
 
-    current_time = datetime.now()
-    
     # Update revenue based on business assets
     company.annual_revenue = company.business_assets
     
@@ -444,9 +441,18 @@ def update_company_daily(db: Session, company_id: str):
     # Calculate remaining CFO after CAPEX
     remaining_cfo = daily_cfo - daily_capex
 
-    # Apply CEO's cash vs short-term investments decision
-    cash_increase = remaining_cfo * company.cash_allocation
-    investments_increase = remaining_cfo * (1 - company.cash_allocation)
+    # Accumulate dividends in the dividend account
+    daily_dividends = remaining_cfo * company.dividend_payout_percentage
+    company.dividend_account += daily_dividends
+
+    # Check if it's time for quarterly dividend payout
+    if is_quarter_end(current_date) and company.dividend_account > 0:
+        distribute_quarterly_dividends(db, company, current_date)
+
+    # Apply CEO's cash vs short-term investments decision to remaining CFO after dividend accumulation
+    remaining_cfo_after_dividends = remaining_cfo - daily_dividends
+    cash_increase = remaining_cfo_after_dividends * company.cash_allocation
+    investments_increase = remaining_cfo_after_dividends * (1 - company.cash_allocation)
 
     company.cash += cash_increase
     company.short_term_investments += investments_increase
@@ -455,9 +461,29 @@ def update_company_daily(db: Session, company_id: str):
     if company.rd_spend_percentage > 0:
         company.cost_of_revenue_percentage *= 0.9999  # Small daily improvement
 
-    company.last_update = current_time
+    company.last_update = current_date
     db.commit()
     return company
+
+def is_quarter_end(date: datetime) -> bool:
+    return date.month in [3, 6, 9, 12] and date.day == 31
+
+def distribute_quarterly_dividends(db: Session, company: DBCompany, current_date: datetime):
+    total_dividends = company.dividend_account
+    shareholders = db.query(DBPortfolio).filter(DBPortfolio.company_id == company.id).all()
+    total_shares = sum(shareholder.shares for shareholder in shareholders)
+    
+    for shareholder in shareholders:
+        dividend_share = (shareholder.shares / total_shares) * total_dividends
+        after_tax_dividend = dividend_share * 0.8  # 20% tax rate
+        shareholder_account = db.query(DBShareholder).filter(DBShareholder.id == shareholder.shareholder_id).first()
+        shareholder_account.cash += after_tax_dividend
+    
+    company.dividends_paid += total_dividends
+    company.dividend_account = 0
+    company.last_dividend_payout_date = current_date
+    db.commit()
+    logger.info(f"Distributed quarterly dividends for company {company.id}: ${total_dividends:.2f}")
 
 def get_income_statement(db: Session, company_id: str):
     try:

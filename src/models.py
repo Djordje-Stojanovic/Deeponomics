@@ -83,7 +83,10 @@ class DBCompany(Base):
 
     # New attributes for CEO decision-making
     capex_percentage = Column(Float, default=0.5)  # Default to 50%
+    dividend_payout_percentage = Column(Float, default=0) # Default to 0%
     cash_allocation = Column(Float, default=0.5)  # Default to 50% cash, 50% investments
+    dividend_account = Column(Float, default=0)
+    last_dividend_payout_date = Column(DateTime, default=func.now())
 
     # Relationships
     portfolios = relationship("DBPortfolio", back_populates="company")

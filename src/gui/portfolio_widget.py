@@ -66,6 +66,9 @@ class PortfolioWidget(QWidget):
     def setup_ui(self):
         layout = QVBoxLayout(self)
         
+        self.cash_balance_label = QLabel("Cash Balance: $0.00")
+        layout.addWidget(self.cash_balance_label)
+
         self.total_value_label = QLabel("Total Portfolio Value: $0.00")
         layout.addWidget(self.total_value_label)
 
@@ -75,6 +78,14 @@ class PortfolioWidget(QWidget):
         layout.addWidget(self.table_view)
 
     def update_data(self, shareholder_id):
+        db = SessionLocal()
+        shareholder = crud.get_shareholder(db, shareholder_id)
+        self.cash_balance_label.setText(f"Cash Balance: ${shareholder.cash:.2f}")
+        
         self.model.update_data(shareholder_id)
+        
         total_value = sum(holding['total_value'] for holding in self.model.portfolio)
+        total_value += shareholder.cash  # Include cash in total portfolio value
         self.total_value_label.setText(f"Total Portfolio Value: ${total_value:.2f}")
+        
+        db.close()

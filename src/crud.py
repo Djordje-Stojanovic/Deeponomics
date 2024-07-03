@@ -480,7 +480,7 @@ def distribute_quarterly_dividends(db: Session, company: DBCompany, current_date
         shareholder_account.cash += after_tax_dividend
     
     company.dividends_paid += total_dividends
-    company.dividend_account = 0
+    company.dividend_account = 0  # Empty the dividend account after payout
     company.last_dividend_payout_date = current_date
     db.commit()
     logger.info(f"Distributed quarterly dividends for company {company.id}: ${total_dividends:.2f}")

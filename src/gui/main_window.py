@@ -17,7 +17,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Financial Market Simulation")
         self.current_user_id = None
         self.current_company_id = None
-        self.simulation_date = QDateTime(2020, 1, 1, 0, 0, 0)  # Start date: Jan 1, 2020
+        self.simulation_date = self.get_latest_simulation_date()  # Use the new method here
         self.is_paused = False
         self.setup_ui()
         self.setup_data_update_timer()
@@ -121,3 +121,22 @@ class MainWindow(QMainWindow):
                 return False
         else:
             return False
+        
+    def get_latest_simulation_date(self):
+        db = SessionLocal()
+        try:
+            # Query the latest update date from the companies table
+            latest_date = db.query(func.max(DBCompany.last_update)).scalar()
+            
+            if latest_date:
+                # If we have a date in the database, use it
+                return QDateTime(latest_date)
+            else:
+                # If no date is found (fresh database), return the default start date
+                return QDateTime(2020, 1, 1, 0, 0, 0)
+        except Exception as e:
+            print(f"Error fetching latest simulation date: {str(e)}")
+            # In case of any error, return the default start date
+            return QDateTime(2020, 1, 1, 0, 0, 0)
+        finally:
+            db.close()

@@ -1,21 +1,23 @@
 # Diff Summary
 
-Date : 2024-07-01 18:25:26
+Date : 2024-07-02 20:56:45
 
-Directory e:\\Deeponomics\\src\\gui
+Directory e:\\Deeponomics\\src
 
-Total : 3 files,  85 codes, 10 comments, 16 blanks, all 111 lines
+Total : 6 files,  142 codes, 6 comments, 27 blanks, all 175 lines
 
 [Summary](results.md) / [Details](details.md) / Diff Summary / [Diff Details](diff-details.md)
 
 ## Languages
 | language | files | code | comment | blank | total |
 | :--- | ---: | ---: | ---: | ---: | ---: |
-| Python | 3 | 85 | 10 | 16 | 111 |
+| Python | 6 | 142 | 6 | 27 | 175 |
 
 ## Directories
 | path | files | code | comment | blank | total |
 | :--- | ---: | ---: | ---: | ---: | ---: |
-| . | 3 | 85 | 10 | 16 | 111 |
+| . | 6 | 142 | 6 | 27 | 175 |
+| . (Files) | 3 | 49 | 2 | 12 | 63 |
+| gui | 3 | 93 | 4 | 15 | 112 |
 
 [Summary](results.md) / [Details](details.md) / Diff Summary / [Diff Details](diff-details.md)

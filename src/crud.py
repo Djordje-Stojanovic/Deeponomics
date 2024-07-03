@@ -561,3 +561,49 @@ def get_next_dividend_date(current_date: datetime) -> datetime:
         return datetime(year, 12, 31)
     else:
         return datetime(year + 1, 3, 31)
+
+def execute_stock_split(db: Session, company_id: str, split_ratio: str):
+    company = db.query(DBCompany).filter(DBCompany.id == company_id).first()
+    if not company:
+        return False
+
+    numerator, denominator = map(int, split_ratio.split(':'))
+    
+    # Determine if it's a regular split or reverse split
+    is_reverse_split = numerator < denominator
+
+    # Update company's outstanding shares and stock price
+    if is_reverse_split:
+        company.outstanding_shares = company.outstanding_shares * numerator // denominator
+        company.stock_price = company.stock_price * denominator / numerator
+    else:
+        company.outstanding_shares = company.outstanding_shares * numerator // denominator
+        company.stock_price = company.stock_price * denominator / numerator
+
+    # Update all portfolios
+    portfolios = db.query(DBPortfolio).filter(DBPortfolio.company_id == company_id).all()
+    for portfolio in portfolios:
+        if is_reverse_split:
+            portfolio.shares = portfolio.shares * numerator // denominator
+        else:
+            portfolio.shares = portfolio.shares * numerator // denominator
+
+    # Update all open orders
+    orders = db.query(Order).filter(Order.company_id == company_id).all()
+    for order in orders:
+        if is_reverse_split:
+            order.shares = order.shares * numerator // denominator
+            if order.price:
+                order.price = order.price * denominator / numerator
+        else:
+            order.shares = order.shares * numerator // denominator
+            if order.price:
+                order.price = order.price * denominator / numerator
+
+    try:
+        db.commit()
+        return True
+    except Exception as e:
+        print(f"Error executing stock split: {str(e)}")
+        db.rollback()
+        return False

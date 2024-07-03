@@ -27,6 +27,8 @@ class MainWindow(QMainWindow):
     def setup_ui(self):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
+        self.ceo_widget = CEOWidget()
+        self.ceo_widget.settings_updated.connect(self.update_after_stock_split)
         main_layout = QVBoxLayout(central_widget)
         
         # Add control bar with pause button and date display
@@ -57,6 +59,14 @@ class MainWindow(QMainWindow):
         
         main_layout.addWidget(self.tab_widget)
 
+    def update_after_stock_split(self):
+        self.market_data_widget.update_data()
+        self.trading_widget.update_companies()
+        if self.current_user_id:
+            self.portfolio_widget.update_data(self.current_user_id)
+        if self.current_company_id:
+            self.financials_widget.update_data()
+            
     def setup_data_update_timer(self):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_data)

@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
-                               QSlider, QPushButton, QSpinBox, QMessageBox)
+                               QSlider, QPushButton, QSpinBox, QMessageBox, QDialog, QComboBox)
 from PySide6.QtCore import Qt, Signal
 import crud
 from database import SessionLocal
@@ -21,6 +21,11 @@ class CEOWidget(QWidget):
         # Add Next Dividend Date Label
         self.next_dividend_label = QLabel("Next Dividend Date: N/A")
         layout.addWidget(self.next_dividend_label)
+
+        # Add Stock Split Button
+        self.stock_split_button = QPushButton("Stock Split")
+        self.stock_split_button.clicked.connect(self.show_stock_split_dialog)
+        layout.addWidget(self.stock_split_button)
 
         # CAPEX Slider
         capex_layout = QHBoxLayout()
@@ -145,3 +150,62 @@ class CEOWidget(QWidget):
             self.next_dividend_label.setText("Next Dividend Date: Error")
         finally:
             db.close()
+
+    def show_stock_split_dialog(self):
+        if not self.company_id:
+            QMessageBox.warning(self, "Error", "No company selected.")
+            return
+
+        db = SessionLocal()
+        try:
+            company = crud.get_company(db, self.company_id)
+            if not company:
+                QMessageBox.warning(self, "Error", f"Company with ID {self.company_id} not found.")
+                return
+
+            if company.stock_price < 20 or company.stock_price > 100:
+                dialog = StockSplitDialog(company.stock_price, self)
+                if dialog.exec():
+                    split_ratio = dialog.get_split_ratio()
+                    success = crud.execute_stock_split(db, self.company_id, split_ratio)
+                    if success:
+                        QMessageBox.information(self, "Success", f"Stock split ({split_ratio}) executed successfully.")
+                        self.settings_updated.emit()
+                    else:
+                        QMessageBox.warning(self, "Error", "Failed to execute stock split.")
+            else:
+                QMessageBox.information(self, "Information", "Stock split is only available when the stock price is below $20 or above $100.")
+        finally:
+            db.close()
+
+class StockSplitDialog(QDialog):
+    def __init__(self, stock_price, parent=None):
+        super().__init__(parent)
+        self.stock_price = stock_price
+        self.setup_ui()
+
+    def setup_ui(self):
+        self.setWindowTitle("Stock Split Options")
+        layout = QVBoxLayout(self)
+
+        self.combo_box = QComboBox()
+        if self.stock_price > 100:
+            self.combo_box.addItems(["2:1", "3:1", "4:1", "5:1"])
+        elif self.stock_price < 20:
+            self.combo_box.addItems(["1:2", "1:3", "1:4", "1:5"])
+
+        layout.addWidget(QLabel("Select split ratio:"))
+        layout.addWidget(self.combo_box)
+
+        buttons = QHBoxLayout()
+        ok_button = QPushButton("OK")
+        ok_button.clicked.connect(self.accept)
+        cancel_button = QPushButton("Cancel")
+        cancel_button.clicked.connect(self.reject)
+        buttons.addWidget(ok_button)
+        buttons.addWidget(cancel_button)
+
+        layout.addLayout(buttons)
+
+    def get_split_ratio(self):
+        return self.combo_box.currentText()

@@ -139,12 +139,9 @@ class CEOWidget(QWidget):
 
         db = SessionLocal()
         try:
-            current_date = db.query(func.max(DBCompany.last_update)).scalar()
-            if current_date:
-                next_dividend_date = crud.get_next_dividend_date(current_date)
-                self.next_dividend_label.setText(f"Next Dividend Date: {next_dividend_date.strftime('%Y-%m-%d')}")
-            else:
-                self.next_dividend_label.setText("Next Dividend Date: N/A")
+            current_date = crud.get_simulation_date(db)
+            next_dividend_date = crud.get_next_dividend_date(current_date)
+            self.next_dividend_label.setText(f"Next Dividend Date: {next_dividend_date.strftime('%Y-%m-%d')}")
         except Exception as e:
             print(f"Error updating CEO widget data: {str(e)}")
             self.next_dividend_label.setText("Next Dividend Date: Error")
@@ -203,7 +200,7 @@ class StockSplitDialog(QDialog):
         cancel_button = QPushButton("Cancel")
         cancel_button.clicked.connect(self.reject)
         buttons.addWidget(ok_button)
-        buttons.addWidget(cancel_button)
+        buttons.addWidget(cancel_button)    
 
         layout.addLayout(buttons)
 

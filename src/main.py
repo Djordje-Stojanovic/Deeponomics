@@ -9,6 +9,7 @@ from models import Base, Sector
 from schemas import Shareholder, Company, Portfolio, OrderCreate, OrderResponse, TransactionResponse, OrderType, OrderSubType, MarketOrderResponse
 from typing import List, Union
 import crud
+from crud import get_simulation_date, update_simulation_date, init_simulation_date
 import logging
 from services.order_matching import match_orders, execute_market_order, cleanup_invalid_market_orders
 from datetime import datetime, timedelta
@@ -23,44 +24,43 @@ def create_tables():
 
 create_tables()
 
-class SimulationState:
-    def __init__(self):
-        self.is_paused = False
-        self.current_date = datetime(2020, 1, 1)  # Start date: Jan 1, 2020
-
-simulation_state = SimulationState()
+# Initialize the simulation date
+db = SessionLocal()
+init_simulation_date(db)
+db.close()
 
 async def run_order_matching():
     while True:
-        if not simulation_state.is_paused:
+        db = SessionLocal()
+        try:
+            current_date = crud.get_simulation_date(db)
             logger.info("Running automated order matching for all companies")
-            db = SessionLocal()
-            try:
-                companies = crud.get_all_companies(db)
-                for company in companies:
-                    logger.info(f"Matching orders for company: {company.name} (ID: {company.id})")
-                    match_orders(company.id, db)          
-                    cleanup_invalid_market_orders(db)
-                logger.info("Completed order matching for all companies")
-            except Exception as e:
-                logger.error(f"Error in automated order matching: {str(e)}")
-            finally:
-                db.close()
+            companies = crud.get_all_companies(db)
+            for company in companies:
+                logger.info(f"Matching orders for company: {company.name} (ID: {company.id})")
+                match_orders(company.id, db)          
+                cleanup_invalid_market_orders(db)
+            logger.info("Completed order matching for all companies")
+        except Exception as e:
+            logger.error(f"Error in automated order matching: {str(e)}")
+        finally:
+            db.close()
         await asyncio.sleep(1)  # Wait for 1 second before the next round
 
 async def run_company_updates():
     while True:
-        if not simulation_state.is_paused:
-            db = SessionLocal()
-            try:
-                companies = crud.get_all_companies(db)
-                for company in companies:
-                    crud.update_company_daily(db, company.id, simulation_state.current_date)
-                simulation_state.current_date += timedelta(days=1)
-            except Exception as e:
-                logger.error(f"Error in company updates: {str(e)}")
-            finally:
-                db.close()
+        db = SessionLocal()
+        try:
+            current_date = get_simulation_date(db)
+            companies = crud.get_all_companies(db)
+            for company in companies:
+                crud.update_company_daily(db, company.id)
+            new_date = current_date + timedelta(days=1)
+            update_simulation_date(db, new_date)
+        except Exception as e:
+            logger.error(f"Error in company updates: {str(e)}")
+        finally:
+            db.close()
         await asyncio.sleep(1)  # Run every second (1 day in simulation)
 
 @asynccontextmanager
@@ -100,14 +100,9 @@ async def background_order_matching():
             db.close()
         await asyncio.sleep(1)  # Run every second
 
-@app.post("/toggle_pause")
-async def toggle_pause():
-    simulation_state.is_paused = not simulation_state.is_paused
-    return {"paused": simulation_state.is_paused}
-
 @app.get("/simulation_date")
-async def get_simulation_date():
-    return {"date": simulation_state.current_date.isoformat()}
+async def get_current_simulation_date(db: Session = Depends(get_db)):
+    return {"date": crud.get_simulation_date(db).isoformat()}
 
 @app.post('/shareholders', response_model=Shareholder)
 async def create_shareholder(name: str, initial_cash: float, db: Session = Depends(get_db)):

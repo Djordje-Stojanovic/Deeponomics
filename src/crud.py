@@ -2,7 +2,7 @@
 import logging
 import random
 from sqlalchemy.orm import Session
-from models import DBShareholder, DBCompany, DBPortfolio, Order, Transaction, Sector
+from models import DBShareholder, DBCompany, DBPortfolio, Order, Transaction, Sector, GlobalSettings
 from schemas import OrderCreate, OrderType, OrderSubType
 from fastapi import BackgroundTasks
 import asyncio
@@ -377,11 +377,13 @@ def get_cash_flow_statement(db: Session, company_id: str):
         logger.error(f"Error generating cash flow statement for company {company_id}: {str(e)}")
         return None
 
-def update_company_daily(db: Session, company_id: str, current_date: datetime):
+def update_company_daily(db: Session, company_id: str):
     company = db.query(DBCompany).filter(DBCompany.id == company_id).first()
     if not company:
         logger.error(f"Company with id {company_id} not found")
         return None
+    
+    current_date = get_simulation_date(db)
 
     # Update revenue based on business assets
     company.annual_revenue = company.business_assets
@@ -607,3 +609,34 @@ def execute_stock_split(db: Session, company_id: str, split_ratio: str):
         print(f"Error executing stock split: {str(e)}")
         db.rollback()
         return False
+    
+def get_simulation_date(db: Session) -> datetime:
+    setting = db.query(GlobalSettings).filter(GlobalSettings.key == "simulation_date").first()
+    if setting:
+        return datetime.fromisoformat(setting.value)
+    return datetime(2020, 1, 1)  # Default start date
+
+def update_simulation_date(db: Session, new_date: datetime):
+    setting = db.query(GlobalSettings).filter(GlobalSettings.key == "simulation_date").first()
+    if setting:
+        setting.value = new_date.isoformat()
+        setting.last_updated = datetime.now()
+    else:
+        new_setting = GlobalSettings(key="simulation_date", value=new_date.isoformat(), last_updated=datetime.now())
+        db.add(new_setting)
+    db.commit()
+
+def init_simulation_date(db: Session):
+    setting = db.query(GlobalSettings).filter(GlobalSettings.key == "simulation_date").first()
+    if not setting:
+        default_start_date = datetime(2020, 1, 1)
+        new_setting = GlobalSettings(
+            key="simulation_date",
+            value=default_start_date.isoformat(),
+            last_updated=datetime.now()
+        )
+        db.add(new_setting)
+        db.commit()
+        print(f"Initialized simulation date to {default_start_date}")
+    else:
+        print(f"Simulation date already exists: {setting.value}")

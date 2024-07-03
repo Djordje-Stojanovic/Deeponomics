@@ -1,0 +1,16 @@
+"filename", "language", "Python", "comment", "blank", "total"
+"e:\Deeponomics\src\__init__.py", "Python", 0, 0, 1, 1
+"e:\Deeponomics\src\crud.py", "Python", 471, 43, 95, 609
+"e:\Deeponomics\src\database.py", "Python", 17, 0, 5, 22
+"e:\Deeponomics\src\gui\ceo_widget.py", "Python", 173, 7, 31, 211
+"e:\Deeponomics\src\gui\financials_widget.py", "Python", 72, 0, 18, 90
+"e:\Deeponomics\src\gui\main_window.py", "Python", 126, 5, 21, 152
+"e:\Deeponomics\src\gui\market_data_widget.py", "Python", 59, 3, 11, 73
+"e:\Deeponomics\src\gui\portfolio_widget.py", "Python", 96, 4, 16, 116
+"e:\Deeponomics\src\gui\trading_widget.py", "Python", 177, 5, 30, 212
+"e:\Deeponomics\src\gui_main.py", "Python", 10, 1, 2, 13
+"e:\Deeponomics\src\main.py", "Python", 205, 3, 32, 240
+"e:\Deeponomics\src\models.py", "Python", 114, 9, 28, 151
+"e:\Deeponomics\src\schemas.py", "Python", 66, 1, 16, 83
+"e:\Deeponomics\src\services\order_matching.py", "Python", 234, 13, 53, 300
+"Total", "-", 1820, 94, 359, 2273

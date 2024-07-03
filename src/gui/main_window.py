@@ -7,7 +7,7 @@ from .ceo_widget import CEOWidget
 from .financials_widget import FinancialsWidget
 import crud
 from database import SessionLocal
-from datetime import time, datetime
+from datetime import datetime, timedelta  # Add this import
 from sqlalchemy import func
 from models import DBCompany
 
@@ -17,12 +17,13 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Financial Market Simulation")
         self.current_user_id = None
         self.current_company_id = None
-        self.simulation_date = self.get_latest_simulation_date()  # Use the new method here
+        self.db = SessionLocal()
+        self.simulation_date = crud.get_simulation_date(self.db)
         self.is_paused = False
         self.setup_ui()
         self.setup_data_update_timer()
         if not self.login():
-            self.close()
+            self.close()    
 
     def setup_ui(self):
         central_widget = QWidget()
@@ -66,7 +67,7 @@ class MainWindow(QMainWindow):
             self.portfolio_widget.update_data(self.current_user_id)
         if self.current_company_id:
             self.financials_widget.update_data()
-            
+
     def setup_data_update_timer(self):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_data)
@@ -74,7 +75,8 @@ class MainWindow(QMainWindow):
 
     def update_data(self):
         if not self.is_paused:
-            self.simulation_date = self.simulation_date.addDays(1)
+            self.simulation_date += timedelta(days=1)
+            crud.update_simulation_date(self.db, self.simulation_date)
             self.update_date_display()
             self.market_data_widget.update_data()
             self.trading_widget.update_companies()
@@ -84,7 +86,7 @@ class MainWindow(QMainWindow):
                 self.financials_widget.update_data()
 
     def update_date_display(self):
-        self.date_label.setText(f"Simulation Date: {self.simulation_date.toString('yyyy-MM-dd')}")
+        self.date_label.setText(f"Simulation Date: {self.simulation_date.strftime('%Y-%m-%d')}")    
 
     def toggle_pause(self):
         self.is_paused = not self.is_paused
@@ -150,3 +152,8 @@ class MainWindow(QMainWindow):
             return QDateTime(2020, 1, 1, 0, 0, 0)
         finally:
             db.close()
+
+    def closeEvent(self, event):
+        crud.update_simulation_date(self.db, self.simulation_date)
+        self.db.close()
+        super().closeEvent(event)

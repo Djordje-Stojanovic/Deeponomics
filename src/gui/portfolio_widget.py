@@ -96,12 +96,9 @@ class PortfolioWidget(QWidget):
                 self.total_value_label.setText(f"Total Portfolio Value: ${total_value:.2f}")
                 
                 # Update Next Dividend Date
-                current_date = db.query(func.max(DBCompany.last_update)).scalar()
-                if current_date:
-                    next_dividend_date = crud.get_next_dividend_date(current_date)
-                    self.next_dividend_label.setText(f"Next Dividend Date: {next_dividend_date.strftime('%Y-%m-%d')}")
-                else:
-                    self.next_dividend_label.setText("Next Dividend Date: N/A")
+                current_date = crud.get_simulation_date(db)
+                next_dividend_date = crud.get_next_dividend_date(current_date)
+                self.next_dividend_label.setText(f"Next Dividend Date: {next_dividend_date.strftime('%Y-%m-%d')}")
             else:
                 print(f"Shareholder with ID {shareholder_id} not found")
                 self.cash_balance_label.setText("Cash Balance: N/A")

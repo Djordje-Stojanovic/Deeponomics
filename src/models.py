@@ -5,6 +5,15 @@ from sqlalchemy.orm import relationship
 from sqlalchemy import func
 from database import Base
 from enum import Enum
+from datetime import datetime
+
+
+class GlobalSettings(Base):
+    __tablename__ = "global_settings"
+
+    key = Column(String, primary_key=True, index=True)
+    value = Column(String)
+    last_updated = Column(DateTime)    
 
 class OrderType(str, Enum):
     BUY = 'buy'

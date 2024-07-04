@@ -6,6 +6,7 @@ import crud
 import uuid
 import logging
 from crud import update_stock_price
+from sqlalchemy import func
 
 logger = logging.getLogger(__name__)
 

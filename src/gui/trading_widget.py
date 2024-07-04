@@ -1,6 +1,6 @@
 # src/gui/trading_widget.py
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, 
-                               QLineEdit, QPushButton, QComboBox, QTableView, QLabel, QMessageBox)
+                               QLineEdit, QPushButton, QComboBox, QTableView, QLabel, QMessageBox, QTabWidget)
 from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex
 import crud
 from database import SessionLocal
@@ -54,21 +54,80 @@ class OrderBookModel(QAbstractTableModel):
     def update_data(self, company_id):
         db = SessionLocal()
         order_book = crud.get_order_book(db, company_id)
-        self.buy_orders = order_book['buy']
-        self.sell_orders = order_book['sell']
+        self.buy_orders = sorted(order_book['buy'], key=lambda x: x.price or float('inf'), reverse=True)
+        self.sell_orders = sorted(order_book['sell'], key=lambda x: x.price or float('inf'))
         db.close()
+        self.layoutChanged.emit()
+
+class OpenOrdersModel(QAbstractTableModel):
+    def __init__(self, user_id):
+        super().__init__()
+        self.user_id = user_id
+        self.orders = []
+        self.headers = ["Company", "Type", "Subtype", "Price", "Shares"]
+
+    def rowCount(self, parent=QModelIndex()):
+        return len(self.orders)
+
+    def columnCount(self, parent=QModelIndex()):
+        return len(self.headers)
+
+    def data(self, index, role=Qt.DisplayRole):
+        if role == Qt.DisplayRole:
+            order = self.orders[index.row()]
+            col = index.column()
+            if col == 0:
+                return order['company_name']
+            elif col == 1:
+                return order['order_type']
+            elif col == 2:
+                return order['order_subtype']
+            elif col == 3:
+                return f"${order['price']:.2f}" if order['price'] is not None else "Market"
+            elif col == 4:
+                return str(order['shares'])
+        return None
+
+    def headerData(self, section, orientation, role):
+        if role == Qt.DisplayRole and orientation == Qt.Horizontal:
+            return self.headers[section]
+        return None
+
+    def update_data(self):
+        db = SessionLocal()
+        try:
+            orders = crud.get_shareholder_orders(db, self.user_id)
+            self.orders = []
+            for order in orders:
+                company = crud.get_company(db, order.company_id)
+                self.orders.append({
+                    'company_name': company.name if company else "Unknown",
+                    'order_type': order.order_type.value,
+                    'order_subtype': order.order_subtype.value,
+                    'price': order.price,
+                    'shares': order.shares,
+                    'id': order.id
+                })
+        finally:
+            db.close()
         self.layoutChanged.emit()
 
 class TradingWidget(QWidget):
     def __init__(self):
         super().__init__()
         self.current_user_id = None
-        self.companies = []  # Store company data
+        self.companies = []
         self.setup_ui()
 
     def setup_ui(self):
         layout = QVBoxLayout(self)
-
+        
+        self.tab_widget = QTabWidget()
+        
+        # Order entry and order book tab
+        order_entry_widget = QWidget()
+        order_entry_layout = QVBoxLayout(order_entry_widget)
+        
         # Order entry form
         form_layout = QFormLayout()
         self.company_combo = QComboBox()
@@ -88,17 +147,63 @@ class TradingWidget(QWidget):
         form_layout.addRow("Price:", self.price_edit)
         form_layout.addRow(self.submit_button)
 
-        layout.addLayout(form_layout)
+        order_entry_layout.addLayout(form_layout)
 
         # Order book
         self.order_book_label = QLabel("Order Book")
-        layout.addWidget(self.order_book_label)
+        order_entry_layout.addWidget(self.order_book_label)
         self.order_book_view = QTableView()
         self.order_book_model = OrderBookModel()
         self.order_book_view.setModel(self.order_book_model)
-        layout.addWidget(self.order_book_view)
+        order_entry_layout.addWidget(self.order_book_view)
 
         self.submit_button.clicked.connect(self.place_order)
+        
+        self.tab_widget.addTab(order_entry_widget, "Order Entry")
+        
+        # Modify the Open orders tab setup
+        open_orders_widget = QWidget()
+        open_orders_layout = QVBoxLayout(open_orders_widget)
+        self.open_orders_view = QTableView()
+        self.open_orders_model = OpenOrdersModel(self.current_user_id)
+        self.open_orders_view.setModel(self.open_orders_model)
+        open_orders_layout.addWidget(self.open_orders_view)
+        
+        cancel_button = QPushButton("Cancel Selected Order")
+        cancel_button.clicked.connect(self.cancel_selected_order)
+        open_orders_layout.addWidget(cancel_button)
+        
+        self.tab_widget.addTab(open_orders_widget, "Open Orders")
+        
+        layout.addWidget(self.tab_widget)
+
+    def set_current_user_id(self, user_id):
+        self.current_user_id = user_id
+        self.open_orders_model.user_id = user_id
+        self.open_orders_model.update_data()
+
+    def cancel_selected_order(self):
+        selected_indexes = self.open_orders_view.selectionModel().selectedRows()
+        if not selected_indexes:
+            QMessageBox.warning(self, "Error", "No order selected.")
+            return
+
+        selected_row = selected_indexes[0].row()
+        order_id = self.open_orders_model.orders[selected_row]['id']
+
+        db = SessionLocal()
+        try:
+            success = crud.cancel_order(db, order_id)
+            if success:
+                QMessageBox.information(self, "Success", "Order cancelled successfully.")
+                self.open_orders_model.update_data()
+                self.update_order_book(self.company_combo.currentData())
+            else:
+                QMessageBox.warning(self, "Error", "Failed to cancel order.")
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"An error occurred: {str(e)}")
+        finally:
+            db.close()
 
     def update_companies(self):
         db = SessionLocal()
@@ -144,6 +249,13 @@ class TradingWidget(QWidget):
             order_type = OrderType.BUY if self.order_type_combo.currentText() == "Buy" else OrderType.SELL
             shareholder = crud.get_shareholder(db, self.current_user_id)
             company = crud.get_company(db, company_id)
+
+            # Check if the user has conflicting orders
+            existing_orders = crud.get_shareholder_orders(db, self.current_user_id)
+            conflicting_orders = [o for o in existing_orders if o.company_id == company_id and o.order_type != order_type]
+            if conflicting_orders:
+                QMessageBox.warning(self, "Error", "You have existing orders for this company in the opposite direction. Please cancel them before placing a new order.")
+                return
 
             if order_type == OrderType.BUY:
                 if order_subtype == OrderSubType.LIMIT:
@@ -199,6 +311,7 @@ class TradingWidget(QWidget):
             if created_order:
                 QMessageBox.information(self, "Success", "Order placed successfully.")
                 self.update_order_book(company_id)
+                self.open_orders_model.update_data()
             else:
                 QMessageBox.warning(self, "Error", "Failed to create order. Please check your inputs and try again.")
                 print(f"Order creation failed. Inputs: {order}")

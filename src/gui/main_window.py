@@ -139,7 +139,7 @@ class MainWindow(QMainWindow):
 
     def set_current_shareholder(self, shareholder_id, db):
         self.current_user_id = shareholder_id
-        self.trading_widget.current_user_id = shareholder_id
+        self.trading_widget.set_current_user_id(shareholder_id)
 
         shareholder = crud.get_shareholder(db, shareholder_id)
         company = crud.get_company_by_founder(db, shareholder_id)

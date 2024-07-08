@@ -85,13 +85,17 @@ def execute_trade(buy_order: Order, sell_order: Order, db: Session):
     trade_shares = min(buy_order.shares, sell_order.shares)
 
     # Check if this trade would exceed the company's outstanding shares
-    total_shares = db.query(func.sum(DBPortfolio.shares)).filter(DBPortfolio.company_id == company.id).scalar() or 0
-    if total_shares + trade_shares > company.outstanding_shares:
-        logger.warning(f"Trade would exceed outstanding shares. Adjusting trade size.")
-        trade_shares = company.outstanding_shares - total_shares
-        if trade_shares <= 0:
-            logger.warning(f"No shares available for trade. Cancelling trade.")
-            return
+    buyer_portfolio = crud.get_portfolio(db, buy_order.shareholder_id, company.id)
+    buyer_current_shares = buyer_portfolio.shares if buyer_portfolio else 0
+    buyer_max_shares = company.outstanding_shares - buyer_current_shares
+
+    if trade_shares > buyer_max_shares:
+        logger.warning(f"Trade would exceed buyer's maximum allowed shares. Adjusting trade size.")
+        trade_shares = buyer_max_shares
+
+    if trade_shares <= 0:
+        logger.warning(f"No shares available for trade. Cancelling trade.")
+        return
 
     trade_price = sell_order.price
 
@@ -118,13 +122,18 @@ def execute_trade(buy_order: Order, sell_order: Order, db: Session):
     else:
         db.add(sell_order)
 
+    if buy_order.shares == 0:
+        db.delete(buy_order)
+    else:
+        db.add(buy_order)
+
     crud.update_shareholder_portfolio(db, buy_order.shareholder_id, buy_order.company_id, trade_shares)
     crud.update_shareholder_portfolio(db, sell_order.shareholder_id, sell_order.company_id, -trade_shares)
     crud.update_shareholder_cash(db, buy_order.shareholder_id, -trade_shares * trade_price)
     crud.update_shareholder_cash(db, sell_order.shareholder_id, trade_shares * trade_price)
 
-    company = crud.get_company(db, buy_order.company_id)
-    update_stock_price(db, buy_order.company_id)
+    # Update the company's stock price
+    company.stock_price = trade_price
     db.add(company)
 
     db.commit()

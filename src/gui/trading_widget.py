@@ -181,6 +181,7 @@ class TradingWidget(QWidget):
         self.current_user_id = user_id
         self.open_orders_model.user_id = user_id
         self.open_orders_model.update_data()
+        print(f"Updated open orders for user {user_id}. Found {len(self.open_orders_model.orders)} orders.")
 
     def cancel_selected_order(self):
         selected_indexes = self.open_orders_view.selectionModel().selectedRows()
@@ -311,7 +312,8 @@ class TradingWidget(QWidget):
             if created_order:
                 QMessageBox.information(self, "Success", "Order placed successfully.")
                 self.update_order_book(company_id)
-                self.open_orders_model.update_data()  # Update open orders after placing a new order
+                self.open_orders_model.update_data()
+                print(f"Order placed. Updated open orders. Now have {len(self.open_orders_model.orders)} orders.")
             else:
                 QMessageBox.warning(self, "Error", "Failed to create order. Please check your inputs and try again.")
                 print(f"Order creation failed. Inputs: {order}")

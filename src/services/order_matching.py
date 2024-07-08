@@ -93,11 +93,22 @@ def execute_trade(buy_order: Order, sell_order: Order, db: Session):
         logger.warning(f"Trade would exceed buyer's maximum allowed shares. Adjusting trade size.")
         trade_shares = buyer_max_shares
 
+    # Check if the buyer has enough cash
+    buyer = crud.get_shareholder(db, buy_order.shareholder_id)
+    trade_price = sell_order.price
+    total_trade_value = trade_shares * trade_price
+    if buyer.cash < total_trade_value:
+        max_affordable_shares = int(buyer.cash // trade_price)
+        if max_affordable_shares == 0:
+            logger.warning(f"Buyer doesn't have enough cash for this trade. Cancelling trade.")
+            return
+        logger.warning(f"Adjusting trade size due to insufficient funds. New trade size: {max_affordable_shares}")
+        trade_shares = max_affordable_shares
+        total_trade_value = trade_shares * trade_price
+
     if trade_shares <= 0:
         logger.warning(f"No shares available for trade. Cancelling trade.")
         return
-
-    trade_price = sell_order.price
 
     logger.info(f"Executing trade: {trade_shares} shares at ${trade_price} per share")
     logger.info(f"Updating buyer (ID: {buy_order.shareholder_id}) portfolio and cash")
@@ -127,10 +138,13 @@ def execute_trade(buy_order: Order, sell_order: Order, db: Session):
     else:
         db.add(buy_order)
 
+    # Update portfolios
     crud.update_shareholder_portfolio(db, buy_order.shareholder_id, buy_order.company_id, trade_shares)
     crud.update_shareholder_portfolio(db, sell_order.shareholder_id, sell_order.company_id, -trade_shares)
-    crud.update_shareholder_cash(db, buy_order.shareholder_id, -trade_shares * trade_price)
-    crud.update_shareholder_cash(db, sell_order.shareholder_id, trade_shares * trade_price)
+
+    # Update cash balances
+    crud.update_shareholder_cash(db, buy_order.shareholder_id, -total_trade_value)
+    crud.update_shareholder_cash(db, sell_order.shareholder_id, total_trade_value)
 
     # Update the company's stock price
     company.stock_price = trade_price
@@ -189,14 +203,13 @@ def execute_market_order(order: Order, db: Session):
 
         # For buy orders, ensure we don't exceed available cash
         if order.order_type == OrderType.BUY:
+            buyer = crud.get_shareholder(db, order.shareholder_id)
             max_affordable_shares = int(buyer.cash // trade_price)
             if max_affordable_shares < trade_shares:
                 trade_shares = max_affordable_shares
                 if trade_shares == 0:
                     logger.warning(f"Insufficient funds to buy any shares at price {trade_price}. Skipping this opposing order.")
                     continue
-            total_cost = trade_shares * trade_price
-            buyer.cash -= total_cost
 
         transaction = Transaction(
             id=str(uuid.uuid4()),
@@ -218,18 +231,16 @@ def execute_market_order(order: Order, db: Session):
         else:
             db.add(opposing_order)
 
+        # Update portfolios and cash balances
+        total_trade_value = trade_shares * trade_price
         crud.update_shareholder_portfolio(db, transaction.buyer_id, order.company_id, trade_shares)
         crud.update_shareholder_portfolio(db, transaction.seller_id, order.company_id, -trade_shares)
-        if order.order_type == OrderType.SELL:
-            crud.update_shareholder_cash(db, transaction.seller_id, trade_shares * trade_price)
+        crud.update_shareholder_cash(db, transaction.buyer_id, -total_trade_value)
+        crud.update_shareholder_cash(db, transaction.seller_id, total_trade_value)
 
     # Update the market order
     order.shares -= executed_shares
     if order.shares > 0:
-        if order.order_type == OrderType.BUY:
-            logger.info(f"Market buy order partially executed. {order.shares} shares remaining unfilled due to insufficient funds or lack of matching sell orders.")
-        else:
-            logger.info(f"Market sell order partially executed. {order.shares} shares remaining unfilled due to lack of matching buy orders within the valid price range.")
         db.add(order)  # Keep the remaining market order in the book
     else:
         db.delete(order)  # Remove the fully executed order

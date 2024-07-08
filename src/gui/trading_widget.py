@@ -161,7 +161,7 @@ class TradingWidget(QWidget):
         
         self.tab_widget.addTab(order_entry_widget, "Order Entry")
         
-        # Modify the Open orders tab setup
+        # Update the Open orders tab setup
         open_orders_widget = QWidget()
         open_orders_layout = QVBoxLayout(open_orders_widget)
         self.open_orders_view = QTableView()
@@ -311,7 +311,7 @@ class TradingWidget(QWidget):
             if created_order:
                 QMessageBox.information(self, "Success", "Order placed successfully.")
                 self.update_order_book(company_id)
-                self.open_orders_model.update_data()
+                self.open_orders_model.update_data()  # Update open orders after placing a new order
             else:
                 QMessageBox.warning(self, "Error", "Failed to create order. Please check your inputs and try again.")
                 print(f"Order creation failed. Inputs: {order}")

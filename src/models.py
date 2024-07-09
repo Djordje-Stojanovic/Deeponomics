@@ -7,7 +7,6 @@ from database import Base
 from enum import Enum
 from datetime import datetime
 
-
 class GlobalSettings(Base):
     __tablename__ = "global_settings"
 
@@ -23,14 +22,118 @@ class OrderSubType(str, Enum):
     LIMIT = 'limit'
     MARKET = 'market'
 
+class ShareholderType(str, Enum):
+    INDIVIDUAL = "Individual"
+    MUTUAL_FUND = "Mutual Fund"
+    PENSION_FUND = "Pension Fund"
+    ETF = "ETF"
+    HEDGE_FUND = "Hedge Fund"
+    INSURANCE_COMPANY = "Insurance Company"
+    BANK = "Bank"
+    GOVERNMENT_FUND = "Government Fund"
+
+class IndividualInvestorType(str, Enum):
+    PASSIVE = "Passive"
+    VALUE = "Value"
+    GROWTH = "Growth"
+    INCOME = "Income"
+    MOMENTUM = "Momentum"
+    SWING = "Swing"
+    TECHNICAL = "Technical"
+    FUNDAMENTAL = "Fundamental"
+    CONTRARIAN = "Contrarian"
+    SECTOR_SPECIFIC = "Sector Specific"
+    POSITION = "Position"
+    NEWS_BASED = "News-based"
+    PENNY_STOCK = "Penny Stock"
+
 class DBShareholder(Base):
     __tablename__ = "shareholders"
 
     id = Column(String, primary_key=True, index=True)
     name = Column(String, index=True)
     cash = Column(Float)
+    type = Column(SQLAlchemyEnum(ShareholderType))
     portfolios = relationship("DBPortfolio", back_populates="shareholder")
     founded_companies = relationship("DBCompany", back_populates="founder")
+
+    __mapper_args__ = {
+        'polymorphic_identity': 'shareholder',
+        'polymorphic_on': type
+    }
+
+class DBIndividualInvestor(DBShareholder):
+    __tablename__ = "individual_investors"
+
+    id = Column(String, ForeignKey('shareholders.id'), primary_key=True)
+    subtype = Column(SQLAlchemyEnum(IndividualInvestorType))
+
+    __mapper_args__ = {
+        'polymorphic_identity': ShareholderType.INDIVIDUAL
+    }
+
+class DBMutualFund(DBShareholder):
+    __tablename__ = "mutual_funds"
+
+    id = Column(String, ForeignKey('shareholders.id'), primary_key=True)
+
+    __mapper_args__ = {
+        'polymorphic_identity': ShareholderType.MUTUAL_FUND
+    }
+
+class DBPensionFund(DBShareholder):
+    __tablename__ = "pension_funds"
+
+    id = Column(String, ForeignKey('shareholders.id'), primary_key=True)
+
+    __mapper_args__ = {
+        'polymorphic_identity': ShareholderType.PENSION_FUND
+    }
+
+class DBETF(DBShareholder):
+    __tablename__ = "etfs"
+
+    id = Column(String, ForeignKey('shareholders.id'), primary_key=True)
+
+    __mapper_args__ = {
+        'polymorphic_identity': ShareholderType.ETF
+    }
+
+class DBHedgeFund(DBShareholder):
+    __tablename__ = "hedge_funds"
+
+    id = Column(String, ForeignKey('shareholders.id'), primary_key=True)
+
+    __mapper_args__ = {
+        'polymorphic_identity': ShareholderType.HEDGE_FUND
+    }
+
+class DBInsuranceCompany(DBShareholder):
+    __tablename__ = "insurance_companies"
+
+    id = Column(String, ForeignKey('shareholders.id'), primary_key=True)
+
+    __mapper_args__ = {
+        'polymorphic_identity': ShareholderType.INSURANCE_COMPANY
+    }
+
+class DBBank(DBShareholder):
+    __tablename__ = "banks"
+
+    id = Column(String, ForeignKey('shareholders.id'), primary_key=True)
+
+    __mapper_args__ = {
+        'polymorphic_identity': ShareholderType.BANK
+    }
+
+class DBGovernmentFund(DBShareholder):
+    __tablename__ = "government_funds"
+
+    id = Column(String, ForeignKey('shareholders.id'), primary_key=True)
+
+    __mapper_args__ = {
+        'polymorphic_identity': ShareholderType.GOVERNMENT_FUND
+    }
 
 class Sector(str, Enum):
     ENERGY = "Energy"

@@ -6,7 +6,7 @@ from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks
 from sqlalchemy.orm import Session
 from database import engine, get_db, SessionLocal
 from models import Base, Sector
-from schemas import Shareholder, Company, Portfolio, OrderCreate, OrderResponse, TransactionResponse, OrderType, OrderSubType, MarketOrderResponse
+from schemas import Shareholder, Company, Portfolio, OrderCreate, OrderResponse, TransactionResponse, OrderType, OrderSubType, MarketOrderResponse, IndividualInvestor, ShareholderType, IndividualInvestorType
 from typing import List, Union
 import crud
 from crud import get_simulation_date, update_simulation_date, init_simulation_date
@@ -105,8 +105,11 @@ async def get_current_simulation_date(db: Session = Depends(get_db)):
     return {"date": crud.get_simulation_date(db).isoformat()}
 
 @app.post('/shareholders', response_model=Shareholder)
-async def create_shareholder(name: str, initial_cash: float, db: Session = Depends(get_db)):
-    return crud.create_shareholder(db, name, initial_cash)
+async def create_shareholder(name: str, initial_cash: float, type: ShareholderType, subtype: IndividualInvestorType = None, db: Session = Depends(get_db)):
+    try:
+        return crud.create_shareholder(db, name, initial_cash, type, subtype)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @app.get('/shareholders/{shareholder_id}', response_model=Shareholder)
 async def get_shareholder(shareholder_id: str, db: Session = Depends(get_db)):

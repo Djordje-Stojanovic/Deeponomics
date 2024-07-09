@@ -2,7 +2,12 @@
 import logging
 import random
 from sqlalchemy.orm import Session
-from models import DBShareholder, DBCompany, DBPortfolio, Order, Transaction, Sector, GlobalSettings
+from models import (
+    DBShareholder, DBIndividualInvestor, DBMutualFund, DBPensionFund, 
+    DBETF, DBHedgeFund, DBInsuranceCompany, DBBank, DBGovernmentFund, 
+    ShareholderType, IndividualInvestorType, DBCompany, DBPortfolio, 
+    Order, Transaction, Sector, GlobalSettings
+)
 from schemas import OrderCreate, OrderType, OrderSubType
 from fastapi import BackgroundTasks
 import asyncio
@@ -97,9 +102,38 @@ def update_stock_price(db: Session, company_id: str):
 
     return company.stock_price
 
-def create_shareholder(db: Session, name: str, initial_cash: float):
+def create_shareholder(db: Session, name: str, initial_cash: float, type: ShareholderType, subtype: IndividualInvestorType = None):
     shareholder_id = str(uuid.uuid4())
-    db_shareholder = DBShareholder(id=shareholder_id, name=name, cash=initial_cash)
+    
+    if type != ShareholderType.INDIVIDUAL and subtype is not None:
+        raise ValueError(f"Subtype should not be provided for {type.value}")
+
+    if type == ShareholderType.INDIVIDUAL:
+        if subtype is None:
+            raise ValueError("Subtype must be provided for Individual Investors")
+        db_shareholder = DBIndividualInvestor(id=shareholder_id, name=name, cash=initial_cash, type=type, subtype=subtype)
+    elif type in [ShareholderType.MUTUAL_FUND, ShareholderType.PENSION_FUND, ShareholderType.ETF,
+                  ShareholderType.HEDGE_FUND, ShareholderType.INSURANCE_COMPANY, ShareholderType.BANK,
+                  ShareholderType.GOVERNMENT_FUND]:
+        if subtype is not None:
+            raise ValueError(f"Subtype should not be provided for {type.value}")    
+        if type == ShareholderType.MUTUAL_FUND:
+            db_shareholder = DBMutualFund(id=shareholder_id, name=name, cash=initial_cash, type=type)
+        elif type == ShareholderType.PENSION_FUND:
+            db_shareholder = DBPensionFund(id=shareholder_id, name=name, cash=initial_cash, type=type)
+        elif type == ShareholderType.ETF:
+            db_shareholder = DBETF(id=shareholder_id, name=name, cash=initial_cash, type=type)
+        elif type == ShareholderType.HEDGE_FUND:
+            db_shareholder = DBHedgeFund(id=shareholder_id, name=name, cash=initial_cash, type=type)
+        elif type == ShareholderType.INSURANCE_COMPANY:
+            db_shareholder = DBInsuranceCompany(id=shareholder_id, name=name, cash=initial_cash, type=type)
+        elif type == ShareholderType.BANK:
+            db_shareholder = DBBank(id=shareholder_id, name=name, cash=initial_cash, type=type)
+        elif type == ShareholderType.GOVERNMENT_FUND:
+            db_shareholder = DBGovernmentFund(id=shareholder_id, name=name, cash=initial_cash, type=type)
+    else:
+        raise ValueError(f"Invalid shareholder type: {type}")
+    
     db.add(db_shareholder)
     db.commit()
     db.refresh(db_shareholder)

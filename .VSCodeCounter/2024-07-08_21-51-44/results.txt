@@ -1,22 +1,22 @@
-Date : 2024-07-01 23:43:08
+Date : 2024-07-08 21:51:44
 Directory : e:\Deeponomics\src
-Total : 14 files,  1569 codes, 79 comments, 311 blanks, all 1959 lines
+Total : 14 files,  1986 codes, 105 comments, 395 blanks, all 2486 lines
 
 Languages
 +----------+------------+------------+------------+------------+------------+
 | language | files      | code       | comment    | blank      | total      |
 +----------+------------+------------+------------+------------+------------+
-| Python   |         14 |      1,569 |         79 |        311 |      1,959 |
+| Python   |         14 |      1,986 |        105 |        395 |      2,486 |
 +----------+------------+------------+------------+------------+------------+
 
 Directories
 +-----------------------------------------------+------------+------------+------------+------------+------------+
 | path                                          | files      | code       | comment    | blank      | total      |
 +-----------------------------------------------+------------+------------+------------+------------+------------+
-| .                                             |         14 |      1,569 |         79 |        311 |      1,959 |
-| . (Files)                                     |          7 |        799 |         51 |        160 |      1,010 |
-| gui                                           |          6 |        536 |         15 |         98 |        649 |
-| services                                      |          1 |        234 |         13 |         53 |        300 |
+| .                                             |         14 |      1,986 |        105 |        395 |      2,486 |
+| . (Files)                                     |          7 |        914 |         58 |        184 |      1,156 |
+| gui                                           |          6 |        826 |         29 |        154 |      1,009 |
+| services                                      |          1 |        246 |         18 |         57 |        321 |
 +-----------------------------------------------+------------+------------+------------+------------+------------+
 
 Files
@@ -24,18 +24,18 @@ Files
 | filename                                      | language | code       | comment    | blank      | total      |
 +-----------------------------------------------+----------+------------+------------+------------+------------+
 | e:\Deeponomics\src\__init__.py                | Python   |          0 |          0 |          1 |          1 |
-| e:\Deeponomics\src\crud.py                    | Python   |        404 |         36 |         80 |        520 |
+| e:\Deeponomics\src\crud.py                    | Python   |        500 |         43 |         99 |        642 |
 | e:\Deeponomics\src\database.py                | Python   |         17 |          0 |          5 |         22 |
-| e:\Deeponomics\src\gui\ceo_widget.py          | Python   |         83 |          4 |         15 |        102 |
+| e:\Deeponomics\src\gui\ceo_widget.py          | Python   |        170 |          7 |         31 |        208 |
 | e:\Deeponomics\src\gui\financials_widget.py   | Python   |         72 |          0 |         18 |         90 |
-| e:\Deeponomics\src\gui\main_window.py         | Python   |         79 |          0 |         13 |         92 |
+| e:\Deeponomics\src\gui\main_window.py         | Python   |        161 |          7 |         29 |        197 |
 | e:\Deeponomics\src\gui\market_data_widget.py  | Python   |         59 |          3 |         11 |         73 |
-| e:\Deeponomics\src\gui\portfolio_widget.py    | Python   |         66 |          3 |         11 |         80 |
-| e:\Deeponomics\src\gui\trading_widget.py      | Python   |        177 |          5 |         30 |        212 |
+| e:\Deeponomics\src\gui\portfolio_widget.py    | Python   |         93 |          4 |         16 |        113 |
+| e:\Deeponomics\src\gui\trading_widget.py      | Python   |        271 |          8 |         49 |        328 |
 | e:\Deeponomics\src\gui_main.py                | Python   |         10 |          1 |          2 |         13 |
-| e:\Deeponomics\src\main.py                    | Python   |        191 |          4 |         28 |        223 |
-| e:\Deeponomics\src\models.py                  | Python   |        111 |          9 |         28 |        148 |
+| e:\Deeponomics\src\main.py                    | Python   |        201 |          4 |         30 |        235 |
+| e:\Deeponomics\src\models.py                  | Python   |        120 |          9 |         31 |        160 |
 | e:\Deeponomics\src\schemas.py                 | Python   |         66 |          1 |         16 |         83 |
-| e:\Deeponomics\src\services\order_matching.py | Python   |        234 |         13 |         53 |        300 |
-| Total                                         |          |      1,569 |         79 |        311 |      1,959 |
+| e:\Deeponomics\src\services\order_matching.py | Python   |        246 |         18 |         57 |        321 |
+| Total                                         |          |      1,986 |        105 |        395 |      2,486 |
 +-----------------------------------------------+----------+------------+------------+------------+------------+

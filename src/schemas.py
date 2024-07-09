@@ -3,6 +3,7 @@ from pydantic import BaseModel, ConfigDict
 from typing import List, Optional
 from enum import Enum
 
+
 class OrderType(str, Enum):
     BUY = 'buy'
     SELL = 'sell'
@@ -43,10 +44,41 @@ class OrderResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+class ShareholderType(str, Enum):
+    INDIVIDUAL = "Individual"
+    MUTUAL_FUND = "Mutual Fund"
+    PENSION_FUND = "Pension Fund"
+    ETF = "ETF"
+    HEDGE_FUND = "Hedge Fund"
+    INSURANCE_COMPANY = "Insurance Company"
+    BANK = "Bank"
+    GOVERNMENT_FUND = "Government Fund"
+
+class IndividualInvestorType(str, Enum):
+    PASSIVE = "Passive"
+    VALUE = "Value"
+    GROWTH = "Growth"
+    INCOME = "Income"
+    MOMENTUM = "Momentum"
+    SWING = "Swing"
+    TECHNICAL = "Technical"
+    FUNDAMENTAL = "Fundamental"
+    CONTRARIAN = "Contrarian"
+    SECTOR_SPECIFIC = "Sector Specific"
+    POSITION = "Position"
+    NEWS_BASED = "News-based"
+    PENNY_STOCK = "Penny Stock"
+
 class Shareholder(BaseModel):
     id: str
     name: str
     cash: float
+    type: ShareholderType
+
+    model_config = ConfigDict(from_attributes=True)
+
+class IndividualInvestor(Shareholder):
+    subtype: IndividualInvestorType
 
     model_config = ConfigDict(from_attributes=True)
 

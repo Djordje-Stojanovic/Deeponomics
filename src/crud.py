@@ -6,7 +6,7 @@ from models import (
     DBShareholder, DBIndividualInvestor, DBMutualFund, DBPensionFund, 
     DBETF, DBHedgeFund, DBInsuranceCompany, DBBank, DBGovernmentFund, 
     ShareholderType, IndividualInvestorType, DBCompany, DBPortfolio, 
-    Order, Transaction, Sector, GlobalSettings
+    Order, Transaction, Sector, GlobalSettings, CEO
 )
 from schemas import OrderCreate, OrderType, OrderSubType
 from fastapi import BackgroundTasks
@@ -152,13 +152,16 @@ def create_company(db: Session, name: str, initial_stock_price: float, initial_s
     
     try:
         company_id = str(uuid.uuid4())
+        new_ceo = CEO.generate_random_ceo()
+        
         db_company = DBCompany(
             id=company_id, 
             name=name, 
             stock_price=initial_stock_price, 
             outstanding_shares=initial_shares,
             founder_id=founder_id,
-            sector=sector  # Add the sector here
+            sector=sector,
+            ceo=new_ceo
         )
         db.add(db_company)
         
@@ -172,6 +175,42 @@ def create_company(db: Session, name: str, initial_stock_price: float, initial_s
         db.rollback()
         logger.error(f"Error creating company: {str(e)}")
         return None
+
+def change_ceo(db: Session, company_id: str, shareholder_id: str):
+    company = get_company(db, company_id)
+    if not company:
+        return None, "Company not found"
+    
+    # Check if the shareholder is the majority shareholder
+    portfolio = get_portfolio(db, shareholder_id, company_id)
+    if not portfolio or portfolio.shares / company.outstanding_shares <= 0.5:
+        return None, "Only the majority shareholder can change the CEO"
+    
+    # Calculate the cost of changing CEO (1% of company equity)
+    company_equity = company.total_equity
+    change_cost = company_equity * 0.01
+    
+    if company.cash < change_cost:
+        return None, f"Insufficient cash to change CEO. Required: ${change_cost:.2f}, Available: ${company.cash:.2f}"
+    
+    # Create a new CEO
+    new_ceo = CEO.generate_random_ceo()
+    db.add(new_ceo)
+    
+    # Update the company
+    company.cash -= change_cost
+    old_ceo = company.ceo
+    company.ceo = new_ceo
+    
+    db.commit()
+    db.refresh(company)
+    
+    # Delete the old CEO
+    if old_ceo:
+        db.delete(old_ceo)
+        db.commit()
+    
+    return company, f"CEO changed successfully. Cost: ${change_cost:.2f}"
 
 def get_company(db: Session, company_id: str):
     return db.query(DBCompany).filter(DBCompany.id == company_id).first()

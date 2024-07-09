@@ -3,7 +3,6 @@ from pydantic import BaseModel, ConfigDict
 from typing import List, Optional
 from enum import Enum
 
-
 class OrderType(str, Enum):
     BUY = 'buy'
     SELL = 'sell'
@@ -24,6 +23,25 @@ class Sector(str, Enum):
     COMMUNICATION_SERVICES = "Communication Services"
     UTILITIES = "Utilities"
     REAL_ESTATE = "Real Estate"
+
+class CEO(BaseModel):
+    id: str
+    name: str
+    capex_allocation: float
+    dividend_allocation: float
+    cash_investment_allocation: float
+
+    model_config = ConfigDict(from_attributes=True)
+
+class Company(BaseModel):
+    id: str
+    name: str
+    stock_price: float
+    outstanding_shares: int
+    sector: Sector
+    ceo: CEO
+
+    model_config = ConfigDict(from_attributes=True)
 
 class OrderCreate(BaseModel):
     shareholder_id: str
@@ -82,15 +100,6 @@ class IndividualInvestor(Shareholder):
 
     model_config = ConfigDict(from_attributes=True)
 
-class Company(BaseModel):
-    id: str
-    name: str
-    stock_price: float
-    outstanding_shares: int
-    sector: Sector  # Add the sector field here
-
-    model_config = ConfigDict(from_attributes=True)
-
 class Portfolio(BaseModel):
     shareholder_id: str
     company_id: str
@@ -111,5 +120,14 @@ class TransactionResponse(BaseModel):
 class MarketOrderResponse(BaseModel):
     message: str
     transactions: List[TransactionResponse]
+
+    model_config = ConfigDict(from_attributes=True)
+
+class CEOResponse(BaseModel):
+    id: str
+    name: str
+    capex_allocation: float
+    dividend_allocation: float
+    cash_investment_allocation: float
 
     model_config = ConfigDict(from_attributes=True)

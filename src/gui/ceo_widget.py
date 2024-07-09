@@ -13,10 +13,23 @@ class CEOWidget(QWidget):
     def __init__(self):
         super().__init__()
         self.company_id = None
+        self.current_user_id = None
         self.setup_ui()
 
     def setup_ui(self):
         layout = QVBoxLayout(self)
+
+        # CEO Info
+        self.ceo_name_label = QLabel("CEO: N/A")
+        layout.addWidget(self.ceo_name_label)
+
+        # CEO Attributes
+        self.ceo_capex_label = QLabel("CEO CAPEX Allocation: N/A")
+        self.ceo_dividend_label = QLabel("CEO Dividend Allocation: N/A")
+        self.ceo_cash_inv_label = QLabel("CEO Cash/Investment Allocation: N/A")
+        layout.addWidget(self.ceo_capex_label)
+        layout.addWidget(self.ceo_dividend_label)
+        layout.addWidget(self.ceo_cash_inv_label)
 
         # Add Next Dividend Date Label
         self.next_dividend_label = QLabel("Next Dividend Date: N/A")
@@ -64,6 +77,12 @@ class CEOWidget(QWidget):
         self.apply_button = QPushButton("Apply Changes")
         layout.addWidget(self.apply_button)
 
+        # Change CEO Button
+        self.change_ceo_button = QPushButton("Change CEO")
+        self.change_ceo_button.clicked.connect(self.change_ceo)
+        self.change_ceo_button.setVisible(False)
+        layout.addWidget(self.change_ceo_button)
+
         # Connect signals
         self.capex_slider.valueChanged.connect(self.update_capex_label)
         self.dividend_slider.valueChanged.connect(self.update_dividend_label)
@@ -83,7 +102,12 @@ class CEOWidget(QWidget):
         if self.company_id != company_id:
             self.company_id = company_id
             self.load_company_settings()
-            self.update_data()  # Add this line to update the dividend date when company is set
+            self.update_data()
+            self.update_ceo_info()
+
+    def set_current_user_id(self, user_id):
+        self.current_user_id = user_id
+        self.update_change_ceo_button_visibility()
 
     def apply_changes(self):
         if not self.company_id:
@@ -145,6 +169,56 @@ class CEOWidget(QWidget):
         except Exception as e:
             print(f"Error updating CEO widget data: {str(e)}")
             self.next_dividend_label.setText("Next Dividend Date: Error")
+        finally:
+            db.close()
+
+    def update_ceo_info(self):
+        if not self.company_id:
+            return
+
+        db = SessionLocal()
+        try:
+            company = crud.get_company(db, self.company_id)
+            if company and company.ceo:
+                self.ceo_name_label.setText(f"CEO: {company.ceo.name}")
+                self.ceo_capex_label.setText(f"CEO CAPEX Allocation: {company.ceo.capex_allocation:.2%}")
+                self.ceo_dividend_label.setText(f"CEO Dividend Allocation: {company.ceo.dividend_allocation:.2%}")
+                self.ceo_cash_inv_label.setText(f"CEO Cash/Investment Allocation: {company.ceo.cash_investment_allocation:.2%}")
+            else:
+                self.ceo_name_label.setText("CEO: N/A")
+                self.ceo_capex_label.setText("CEO CAPEX Allocation: N/A")
+                self.ceo_dividend_label.setText("CEO Dividend Allocation: N/A")
+                self.ceo_cash_inv_label.setText("CEO Cash/Investment Allocation: N/A")
+        finally:
+            db.close()
+
+    def update_change_ceo_button_visibility(self):
+        if not self.company_id or not self.current_user_id:
+            self.change_ceo_button.setVisible(False)
+            return
+
+        db = SessionLocal()
+        try:
+            company = crud.get_company(db, self.company_id)
+            portfolio = crud.get_portfolio(db, self.current_user_id, self.company_id)
+            is_majority_shareholder = portfolio and portfolio.shares / company.outstanding_shares > 0.5
+            self.change_ceo_button.setVisible(is_majority_shareholder)
+        finally:
+            db.close()
+
+    def change_ceo(self):
+        if not self.company_id or not self.current_user_id:
+            return
+
+        db = SessionLocal()
+        try:
+            result, message = crud.change_ceo(db, self.company_id, self.current_user_id)
+            if result:
+                QMessageBox.information(self, "Success", message)
+                self.update_ceo_info()
+                self.settings_updated.emit()
+            else:
+                QMessageBox.warning(self, "Error", message)
         finally:
             db.close()
 

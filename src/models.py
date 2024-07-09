@@ -6,6 +6,7 @@ from sqlalchemy import func
 from database import Base
 from enum import Enum
 from datetime import datetime
+import random
 
 class GlobalSettings(Base):
     __tablename__ = "global_settings"
@@ -148,6 +149,28 @@ class Sector(str, Enum):
     UTILITIES = "Utilities"
     REAL_ESTATE = "Real Estate"
 
+class CEO(Base):
+    __tablename__ = "ceos"
+
+    id = Column(String, primary_key=True, index=True)
+    name = Column(String, index=True)
+    capex_allocation = Column(Float)
+    dividend_allocation = Column(Float)
+    cash_investment_allocation = Column(Float)
+    company_id = Column(String, ForeignKey("companies.id"), unique=True)
+    
+    company = relationship("DBCompany", back_populates="ceo", foreign_keys=[company_id])
+
+    @classmethod
+    def generate_random_ceo(cls):
+        return cls(
+            id=str(uuid.uuid4()),
+            name=f"{random.choice(['John', 'Jane', 'Mike', 'Sarah', 'David', 'Emily'])} {random.choice(['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis'])}",
+            capex_allocation=random.uniform(0, 1),
+            dividend_allocation=random.uniform(0, 1),
+            cash_investment_allocation=random.uniform(0, 1)
+        )
+
 class DBCompany(Base):
     __tablename__ = "companies"
 
@@ -158,6 +181,9 @@ class DBCompany(Base):
     
     # Founder ID
     founder_id = Column(String, ForeignKey("shareholders.id"))
+
+    # CEO relationship
+    ceo = relationship("CEO", back_populates="company", uselist=False, foreign_keys=[CEO.company_id])
 
     # Sector
     sector = Column(SQLAlchemyEnum(Sector))

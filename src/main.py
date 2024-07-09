@@ -5,7 +5,7 @@ from crud import run_company_ticks
 from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks
 from sqlalchemy.orm import Session
 from database import engine, get_db, SessionLocal
-from models import Base, Sector
+from models import Base, Sector, CEO    
 from schemas import Shareholder, Company, Portfolio, OrderCreate, OrderResponse, TransactionResponse, OrderType, OrderSubType, MarketOrderResponse, IndividualInvestor, ShareholderType, IndividualInvestorType
 from typing import List, Union
 import crud
@@ -13,6 +13,7 @@ from crud import get_simulation_date, update_simulation_date, init_simulation_da
 import logging
 from services.order_matching import match_orders, execute_market_order, cleanup_invalid_market_orders
 from datetime import datetime, timedelta
+from schemas import CEOResponse  # Make sure to import CEOResponse from schemas
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -230,6 +231,15 @@ async def get_company_cash_flow_statement(company_id: str, db: Session = Depends
     if cash_flow_statement is None:
         raise HTTPException(status_code=404, detail="Company not found or error generating cash flow statement")
     return cash_flow_statement
+
+@app.get("/companies/{company_id}/ceo", response_model=CEOResponse)
+async def get_company_ceo(company_id: str, db: Session = Depends(get_db)):
+    company = crud.get_company(db, company_id)
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+    if not company.ceo:
+        raise HTTPException(status_code=404, detail="CEO not found for this company")
+    return company.ceo
 
 if __name__ == '__main__':
     import uvicorn

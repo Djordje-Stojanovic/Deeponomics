@@ -509,7 +509,7 @@ def update_company_daily(db: Session, company_id: str):
         daily_cfo -= working_capital_adjustment  # This adds to CFO because adjustment is negative
 
     # Apply CEO's CAPEX decision
-    daily_capex = daily_cfo * company.capex_percentage
+    daily_capex = daily_cfo * company.ceo.capex_allocation
     company.capex = daily_capex
     company.business_assets += daily_capex
 
@@ -517,7 +517,7 @@ def update_company_daily(db: Session, company_id: str):
     remaining_cfo = daily_cfo - daily_capex
 
     # Accumulate dividends in the dividend account
-    daily_dividends = remaining_cfo * company.dividend_payout_percentage
+    daily_dividends = remaining_cfo * company.ceo.dividend_allocation
     company.dividend_account += daily_dividends
 
     # Check if it's time for quarterly dividend payout
@@ -526,8 +526,8 @@ def update_company_daily(db: Session, company_id: str):
 
     # Apply CEO's cash vs short-term investments decision to remaining CFO after dividend accumulation
     remaining_cfo_after_dividends = remaining_cfo - daily_dividends
-    cash_increase = remaining_cfo_after_dividends * company.cash_allocation
-    investments_increase = remaining_cfo_after_dividends * (1 - company.cash_allocation)
+    cash_increase = remaining_cfo_after_dividends * company.ceo.cash_investment_allocation
+    investments_increase = remaining_cfo_after_dividends * (1 - company.ceo.cash_investment_allocation)
 
     company.cash += cash_increase
     company.short_term_investments += investments_increase

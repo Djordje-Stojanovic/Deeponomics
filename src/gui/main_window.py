@@ -19,6 +19,8 @@ class MainWindow(QMainWindow):
         self.current_company_id = None
         self.db = SessionLocal()
         self.simulation_date = crud.get_simulation_date(self.db)
+        self.ceo_widget = CEOWidget()
+        self.ceo_widget.settings_updated.connect(self.update_after_stock_split)
         self.is_paused = False
         self.setup_ui()
         self.setup_data_update_timer()
@@ -93,6 +95,7 @@ class MainWindow(QMainWindow):
             if self.current_company_id:
                 self.financials_widget.update_data()
             self.ceo_widget.update_data()
+            self.ceo_widget.update_change_ceo_button_visibility()  # Add this line
 
     def update_date_display(self):
         self.date_label.setText(f"Simulation Date: {self.simulation_date.strftime('%Y-%m-%d')}")    
@@ -140,6 +143,7 @@ class MainWindow(QMainWindow):
     def set_current_shareholder(self, shareholder_id, db):
         self.current_user_id = shareholder_id
         self.trading_widget.set_current_user_id(shareholder_id)
+        self.ceo_widget.set_current_user_id(shareholder_id)  # Add this line
 
         shareholder = crud.get_shareholder(db, shareholder_id)
         company = crud.get_company_by_founder(db, shareholder_id)
@@ -157,6 +161,7 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle(f"Financial Market Simulation - Logged in as {shareholder.name}")
         self.portfolio_widget.update_data(shareholder_id)
+        self.ceo_widget.update_change_ceo_button_visibility()  # Add this line
 
     def get_latest_simulation_date(self):
         db = SessionLocal()
